@@ -9,8 +9,19 @@ public class VerificationResultDto {
     private String subBatchCode;
     private String batchCode;
     private String supplierName;
+
+
     private String bestBefore;
     private boolean expired;
+
+
+    private boolean assigned;
+    private Long orderId;
+    private String orderNumber;
+    private String customerName;
+    private String customerEmail;
+    // ISO datetime string (or null)
+    private String assignedAt;
 
     public boolean isValid() {
         return valid;
@@ -74,5 +85,53 @@ public class VerificationResultDto {
 
     public void setExpired(boolean expired) {
         this.expired = expired;
+    }
+
+    public boolean isAssigned() {
+        return assigned;
+    }
+
+    public void setAssigned(boolean assigned) {
+        this.assigned = assigned;
+    }
+
+    public Long getOrderId() {
+        return orderId;
+    }
+
+    public void setOrderId(Long orderId) {
+        this.orderId = orderId;
+    }
+
+    public String getOrderNumber() {
+        return orderNumber;
+    }
+
+    public void setOrderNumber(String orderNumber) {
+        this.orderNumber = orderNumber;
+    }
+
+    public String getCustomerName() {
+        return customerName;
+    }
+
+    public void setCustomerName(String customerName) {
+        this.customerName = customerName;
+    }
+
+    public String getCustomerEmail() {
+        return customerEmail;
+    }
+
+    public void setCustomerEmail(String customerEmail) {
+        this.customerEmail = customerEmail;
+    }
+
+    public String getAssignedAt() {
+        return assignedAt;
+    }
+
+    public void setAssignedAt(String assignedAt) {
+        this.assignedAt = assignedAt;
     }
 }

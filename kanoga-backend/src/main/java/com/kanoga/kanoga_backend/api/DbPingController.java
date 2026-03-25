@@ -1,3 +1,4 @@
+// src/main/java/com/kanoga/kanoga_backend/api/DbPingController.java
 package com.kanoga.kanoga_backend.api;
 
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -18,11 +19,21 @@ public class DbPingController {
 
     @GetMapping("/ping")
     public Map<String, Object> ping() {
-        Object now = jdbc.queryForObject("select now()", Object.class);
-        String version = jdbc.queryForObject("select version()", String.class);
-        return Map.of(
-                "now", String.valueOf(now),
-                "version", version
-        );
+        try {
+            Object now = jdbc.queryForObject("select now()", Object.class);
+            String version = jdbc.queryForObject("select version()", String.class);
+            return Map.of(
+                    "status", "ok",
+                    "now", String.valueOf(now),
+                    "version", version
+            );
+        } catch (Exception e) {
+            e.printStackTrace();
+            return Map.of(
+                    "status", "error",
+                    "errorType", e.getClass().getSimpleName(),
+                    "message", e.getMessage()
+            );
+        }
     }
 }

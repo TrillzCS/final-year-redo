@@ -1,10 +1,9 @@
 package com.kanoga.kanoga_backend.verification;
 
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/verify")
+@RequestMapping("/api")
 @CrossOrigin(origins = "http://localhost:5173")
 public class VerificationController {
 
@@ -14,18 +13,8 @@ public class VerificationController {
         this.verificationService = verificationService;
     }
 
-    @GetMapping
-    public ResponseEntity<VerificationResultDto> verify(@RequestParam("code") String code) {
-        try {
-            VerificationResultDto dto = verificationService.verify(code);
-            return ResponseEntity.ok(dto);
-        } catch (Exception e) {
-
-            VerificationResultDto dto = new VerificationResultDto();
-            dto.setValid(false);
-            dto.setMessage("Server error during verification: " + e.getClass().getSimpleName() + " - " + e.getMessage());
-            dto.setExpired(false);
-            return ResponseEntity.ok(dto);
-        }
+    @GetMapping("/verify")
+    public VerificationResultDto verify(@RequestParam("code") String code) {
+        return verificationService.verify(code);
     }
 }
