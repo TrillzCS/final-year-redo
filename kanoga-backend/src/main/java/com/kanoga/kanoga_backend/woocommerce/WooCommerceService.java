@@ -28,7 +28,6 @@ public class WooCommerceService {
     }
 
     public void handleWebhook(String topic, String signature, String rawBody) throws Exception {
-        // Validate signature
         if (!isValidSignature(rawBody, signature)) {
             throw new SecurityException("Invalid webhook signature");
         }
@@ -40,8 +39,7 @@ public class WooCommerceService {
         switch (topic) {
             case "order.created" -> handleOrderCreated(payload);
             case "order.updated" -> handleOrderUpdated(payload);
-            case "order.completed" -> handleOrderCreated(payload);
-            default -> {} // ignore other topics
+            default -> {}
         }
     }
 
@@ -50,13 +48,11 @@ public class WooCommerceService {
         String wooOrderId = order.path("id").asText();
         String orderNo = "WOO-" + wooOrderId;
 
-        // Check if order already exists
         List<Map<String, Object>> existing = jdbc.queryForList(
                 "select id from orders where order_no = ? limit 1", orderNo
         );
         if (!existing.isEmpty()) return;
 
-        // Extract customer details from billing
         JsonNode billing = order.path("billing");
         String firstName = billing.path("first_name").asText("");
         String lastName = billing.path("last_name").asText("");
@@ -71,7 +67,7 @@ public class WooCommerceService {
 
         if (customerName.isEmpty()) customerName = "WooCommerce Customer";
 
-        // Find or create customer
+
         UUID customerId = null;
         if (!customerEmail.isEmpty()) {
             List<Map<String, Object>> existingCustomer = jdbc.queryForList(
@@ -79,6 +75,11 @@ public class WooCommerceService {
             );
             if (!existingCustomer.isEmpty()) {
                 customerId = UUID.fromString(existingCustomer.get(0).get("id").toString());
+                // Update name with latest from WooCommerce billing
+                jdbc.update(
+                        "update customers set name = ? where id = ?",
+                        customerName, customerId
+                );
             }
         }
 
@@ -101,7 +102,6 @@ public class WooCommerceService {
             );
         }
 
-        // Create order
         UUID orderId = UUID.randomUUID();
         String wooStatus = order.path("status").asText("pending");
         String mappedStatus = mapWooStatus(wooStatus);
@@ -114,13 +114,10 @@ public class WooCommerceService {
                 orderId, orderNo, customerId, mappedStatus
         );
 
-        // Create order items from line items
         JsonNode lineItems = order.path("line_items");
         for (JsonNode item : lineItems) {
             String sku = item.path("sku").asText("");
             int qty = item.path("quantity").asInt(1);
-
-            // Look up product by SKU first, then fall back to case-insensitive name match
             UUID productId = findProductId(sku, item.path("name").asText(""));
 
             UUID orderItemId = UUID.randomUUID();
@@ -138,6 +135,22 @@ public class WooCommerceService {
         String wooStatus = order.path("status").asText();
         String mappedStatus = mapWooStatus(wooStatus);
 
+
+        JsonNode billing = order.path("billing");
+        String firstName = billing.path("first_name").asText("");
+        String lastName = billing.path("last_name").asText("");
+        String customerName = (firstName + " " + lastName).trim();
+
+        if (!customerName.isEmpty()) {
+            jdbc.update(
+                    """
+                    update customers set name = ?
+                    where id = (select customer_id from orders where order_no = ? limit 1)
+                    """,
+                    customerName, orderNo
+            );
+        }
+
         jdbc.update(
                 "update orders set status = ?::order_status where order_no = ?",
                 mappedStatus, orderNo
@@ -145,7 +158,6 @@ public class WooCommerceService {
     }
 
     private UUID findProductId(String sku, String name) {
-        // Try SKU match first
         if (!sku.isEmpty()) {
             List<Map<String, Object>> rows = jdbc.queryForList(
                     "select id from products where sku = ? limit 1", sku
@@ -155,7 +167,6 @@ public class WooCommerceService {
             }
         }
 
-        // Fall back to case-insensitive name match
         if (!name.isEmpty()) {
             List<Map<String, Object>> rows = jdbc.queryForList(
                     "select id from products where lower(name) = lower(?) limit 1", name
@@ -164,7 +175,6 @@ public class WooCommerceService {
                 return UUID.fromString(rows.get(0).get("id").toString());
             }
 
-            // Try partial name match as last resort
             List<Map<String, Object>> partialRows = jdbc.queryForList(
                     "select id from products where lower(name) like lower(?) limit 1",
                     "%" + name + "%"
