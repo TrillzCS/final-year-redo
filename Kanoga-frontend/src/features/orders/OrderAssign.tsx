@@ -3,7 +3,7 @@ import { apiGet, apiPost } from "../../lib/apiClient";
 import { useAuth } from "../auth/AuthContext";
 
 type Order = {
-  id: number;
+  id: string;
   orderNumber?: string;
   customerName?: string;
   customerEmail?: string;
@@ -25,7 +25,7 @@ type OrderAssignedUnitDto = {
 };
 
 type SubBatchAvailableDto = {
-  subBatchId: number;
+  subBatchId: string;
   code: string;
   expiry: string | null;
   totalUnits: number;
@@ -34,7 +34,7 @@ type SubBatchAvailableDto = {
 };
 
 type AssignByQrResponse = {
-  orderId: number;
+  orderId: string;
   labelId: number;
   serialNo: number;
   subBatchId: number;
@@ -57,8 +57,8 @@ export default function OrderAssign() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [subBatches, setSubBatches] = useState<SubBatchAvailableDto[]>([]);
 
-  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
-  const [selectedSubBatchId, setSelectedSubBatchId] = useState<number | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [selectedSubBatchId, setSelectedSubBatchId] = useState<string | null>(null);
 
   const [quantity, setQuantity] = useState("1");
   const [qrPayload, setQrPayload] = useState("");
@@ -100,7 +100,7 @@ export default function OrderAssign() {
     }
   }
 
-  async function refreshAssigned(orderId: number) {
+  async function refreshAssigned(orderId: string) {
     if (!auth) return;
     setError(null);
     try {
@@ -179,11 +179,7 @@ export default function OrderAssign() {
 
       const created = await apiPost<CreateOrderRequest, Order>(
         "/api/orders",
-        {
-          orderNumber,
-          customerName,
-          customerEmail,
-        },
+        { orderNumber, customerName, customerEmail },
         auth
       );
 
@@ -206,51 +202,51 @@ export default function OrderAssign() {
     }
   }
 
-  async function handleAssignByQuantity() {
-    setError(null);
-    setSuccess(null);
-    setAssignedNow(null);
-    setLastScan(null);
+async function handleAssignByQuantity() {
+  setError(null);
+  setSuccess(null);
+  setAssignedNow(null);
+  setLastScan(null);
 
-    if (!auth) return setError("Not authenticated.");
-    if (!selectedOrderId) return setError("Select an order first");
+  if (!auth) return setError("Not authenticated.");
+  if (!selectedOrderId) return setError("Select an order first");
 
-    const qty = parseInt(quantity, 10);
-    if (!selectedSubBatchId || isNaN(qty) || qty <= 0) {
-      return setError("Select a sub-batch and enter a valid quantity");
-    }
-
-    if (selectedSubBatch && qty > selectedSubBatch.availableUnits) {
-      return setError(
-        `Not enough available units. Available: ${selectedSubBatch.availableUnits}`
-      );
-    }
-
-    try {
-      setLoadingAssign(true);
-
-      const data = await apiPost<
-        { subBatchId: number; quantity: number },
-        AssignedLabelDto[]
-      >(
-        `/api/orders/${selectedOrderId}/assign`,
-        { subBatchId: selectedSubBatchId, quantity: qty },
-        auth
-      );
-
-      setAssignedNow(data);
-      setSuccess(`Assigned ${data.length} unit(s) to the order.`);
-
-      await Promise.all([refreshAssigned(selectedOrderId), refreshSubBatches()]);
-    } catch (e) {
-      console.error(e);
-      setError(
-        "Assignment failed – check available units and that labels exist for that sub-batch."
-      );
-    } finally {
-      setLoadingAssign(false);
-    }
+  const qty = parseInt(quantity, 10);
+  if (!selectedSubBatchId || isNaN(qty) || qty <= 0) {
+    return setError("Select a sub-batch and enter a valid quantity");
   }
+
+  if (selectedSubBatch && qty > selectedSubBatch.availableUnits) {
+    return setError(
+      `Not enough available units. Available: ${selectedSubBatch.availableUnits}`
+    );
+  }
+
+  try {
+    setLoadingAssign(true);
+
+    const data = await apiPost<
+      { subBatchId: string; quantity: number },
+      AssignedLabelDto[]
+    >(
+      `/api/orders/${selectedOrderId}/assign`,
+      { subBatchId: selectedSubBatchId, quantity: qty },
+      auth
+    );
+
+    setAssignedNow(data);
+    setSuccess(`Assigned ${data.length} unit(s) to the order.`);
+
+    await Promise.all([refreshAssigned(selectedOrderId), refreshSubBatches()]);
+  } catch (e) {
+    console.error(e);
+    setError(
+      "Assignment failed – check available units and that labels exist for that sub-batch."
+    );
+  } finally {
+    setLoadingAssign(false);
+  }
+}
 
   async function handleAssignByScan() {
     setError(null);
@@ -273,7 +269,7 @@ export default function OrderAssign() {
 
       setLastScan(resp);
       setQrPayload("");
-      setSuccess(`Assigned scanned unit ${resp.labelId} to the order.`);
+      setSuccess(`Assigned scanned unit ${resp.serialNo} to the order.`);
 
       await Promise.all([refreshAssigned(selectedOrderId), refreshSubBatches()]);
     } catch (e) {
@@ -294,123 +290,51 @@ export default function OrderAssign() {
         or <strong>Quantity</strong> for bulk assignment from a sub-batch.
       </p>
 
-      <div
-        style={{
-          marginBottom: 16,
-          padding: 12,
-          borderRadius: 10,
-          border: "1px solid #e5e7eb",
-          background: "#fff",
-        }}
-      >
-        <h3 style={{ fontSize: 15, marginTop: 0, marginBottom: 10 }}>
-          Create manual order
-        </h3>
-
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-            gap: 10,
-          }}
-        >
+      <div style={{ marginBottom: 16, padding: 12, borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff" }}>
+        <h3 style={{ fontSize: 15, marginTop: 0, marginBottom: 10 }}>Create manual order</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
           <div>
-            <label style={{ fontSize: 12, marginBottom: 4, display: "block" }}>
-              Order number
-            </label>
+            <label style={{ fontSize: 12, marginBottom: 4, display: "block" }}>Order number</label>
             <input
               value={newOrderNumber}
               onChange={(e) => setNewOrderNumber(e.target.value)}
               placeholder="KAN-1001"
-              style={{
-                width: "100%",
-                padding: 8,
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
+              style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid #d1d5db" }}
             />
           </div>
-
           <div>
-            <label style={{ fontSize: 12, marginBottom: 4, display: "block" }}>
-              Customer name
-            </label>
+            <label style={{ fontSize: 12, marginBottom: 4, display: "block" }}>Customer name</label>
             <input
               value={newCustomerName}
               onChange={(e) => setNewCustomerName(e.target.value)}
               placeholder="Jane Doe"
-              style={{
-                width: "100%",
-                padding: 8,
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
+              style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid #d1d5db" }}
             />
           </div>
-
           <div>
-            <label style={{ fontSize: 12, marginBottom: 4, display: "block" }}>
-              Customer email
-            </label>
+            <label style={{ fontSize: 12, marginBottom: 4, display: "block" }}>Customer email</label>
             <input
               value={newCustomerEmail}
               onChange={(e) => setNewCustomerEmail(e.target.value)}
               placeholder="jane@example.com"
-              style={{
-                width: "100%",
-                padding: 8,
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
+              style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid #d1d5db" }}
             />
           </div>
         </div>
-
         <button
           onClick={handleCreateOrder}
           disabled={creatingOrder}
-          style={{
-            marginTop: 10,
-            padding: "8px 14px",
-            borderRadius: 999,
-            border: "none",
-            background: "#111827",
-            color: "#fff",
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: "pointer",
-            opacity: creatingOrder ? 0.7 : 1,
-          }}
+          style={{ marginTop: 10, padding: "8px 14px", borderRadius: 999, border: "none", background: "#111827", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: creatingOrder ? 0.7 : 1 }}
         >
           {creatingOrder ? "Creating…" : "Create order"}
         </button>
       </div>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <button
-          onClick={() => setMode("scan")}
-          style={{
-            padding: "6px 10px",
-            borderRadius: 999,
-            border: "1px solid #e5e7eb",
-            background: mode === "scan" ? "#e0e7ff" : "#fff",
-            cursor: "pointer",
-            fontSize: 13,
-          }}
-        >
+        <button onClick={() => setMode("scan")} style={{ padding: "6px 10px", borderRadius: 999, border: "1px solid #e5e7eb", background: mode === "scan" ? "#e0e7ff" : "#fff", cursor: "pointer", fontSize: 13 }}>
           Scan mode
         </button>
-        <button
-          onClick={() => setMode("quantity")}
-          style={{
-            padding: "6px 10px",
-            borderRadius: 999,
-            border: "1px solid #e5e7eb",
-            background: mode === "quantity" ? "#e0e7ff" : "#fff",
-            cursor: "pointer",
-            fontSize: 13,
-          }}
-        >
+        <button onClick={() => setMode("quantity")} style={{ padding: "6px 10px", borderRadius: 999, border: "1px solid #e5e7eb", background: mode === "quantity" ? "#e0e7ff" : "#fff", cursor: "pointer", fontSize: 13 }}>
           Quantity mode
         </button>
       </div>
@@ -421,15 +345,8 @@ export default function OrderAssign() {
         </label>
         <select
           value={selectedOrderId ?? ""}
-          onChange={(e) =>
-            setSelectedOrderId(e.target.value ? Number(e.target.value) : null)
-          }
-          style={{
-            width: "100%",
-            padding: 8,
-            borderRadius: 8,
-            border: "1px solid #d1d5db",
-          }}
+          onChange={(e) => setSelectedOrderId(e.target.value ? e.target.value : null)}
+          style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid #d1d5db" }}
         >
           <option value="">Select…</option>
           {orders.map((o) => (
@@ -442,150 +359,74 @@ export default function OrderAssign() {
       </div>
 
       {mode === "scan" ? (
-        <div
-          style={{
-            padding: 12,
-            borderRadius: 10,
-            border: "1px solid #e5e7eb",
-            background: "#fff",
-            marginBottom: 12,
-          }}
-        >
-          <div style={{ fontSize: 13, marginBottom: 8, color: "#374151" }}>
-            Paste the QR payload exactly.
-          </div>
-
+        <div style={{ padding: 12, borderRadius: 10, border: "1px solid #e5e7eb", background: "#fff", marginBottom: 12 }}>
+          <div style={{ fontSize: 13, marginBottom: 8, color: "#374151" }}>Paste the QR payload exactly.</div>
           <textarea
             value={qrPayload}
             onChange={(e) => setQrPayload(e.target.value)}
             placeholder='{"sub":"SUB123","s":1}'
             rows={3}
-            style={{
-              width: "100%",
-              padding: 10,
-              borderRadius: 8,
-              border: "1px solid #d1d5db",
-              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-              fontSize: 12,
-            }}
+            style={{ width: "100%", padding: 10, borderRadius: 8, border: "1px solid #d1d5db", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12 }}
           />
-
           <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
             <button
               onClick={handleAssignByScan}
               disabled={loadingAssign}
-              style={{
-                padding: "8px 14px",
-                borderRadius: 999,
-                border: "none",
-                background: "#4f46e5",
-                color: "#fff",
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: "pointer",
-                opacity: loadingAssign ? 0.7 : 1,
-              }}
+              style={{ padding: "8px 14px", borderRadius: 999, border: "none", background: "#4f46e5", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: loadingAssign ? 0.7 : 1 }}
             >
               {loadingAssign ? "Assigning…" : "Assign scanned unit"}
             </button>
-
             <div style={{ fontSize: 12, color: "#6b7280", alignSelf: "center" }}>
               {loadingSubBatches ? "Refreshing inventory…" : ""}
             </div>
           </div>
-
           {lastScan && (
             <div style={{ marginTop: 10, fontSize: 13, color: "#374151" }}>
-              ✅ Assigned label <strong>{lastScan.labelId}</strong> (serial{" "}
-              <strong>{lastScan.serialNo}</strong>, sub-batch{" "}
-              <strong>{lastScan.subBatchId}</strong>)
+              ✅ Assigned serial <strong>{lastScan.serialNo}</strong> (sub-batch <strong>{lastScan.subBatchId}</strong>)
             </div>
           )}
         </div>
       ) : (
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)",
-            gap: 12,
-            marginBottom: 12,
-          }}
-        >
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 2fr) minmax(0, 1fr)", gap: 12, marginBottom: 12 }}>
           <div>
             <label style={{ fontSize: 12, marginBottom: 4, display: "block" }}>
               Sub-batch {loadingSubBatches ? "(loading…)" : ""}
             </label>
             <select
               value={selectedSubBatchId ?? ""}
-              onChange={(e) =>
-                setSelectedSubBatchId(
-                  e.target.value ? Number(e.target.value) : null
-                )
-              }
-              style={{
-                width: "100%",
-                padding: 8,
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
+              onChange={(e) => setSelectedSubBatchId(e.target.value ? e.target.value : null)}
+              style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid #d1d5db" }}
             >
               <option value="">Select…</option>
               {subBatches.map((s) => (
                 <option key={s.subBatchId} value={s.subBatchId}>
-                  {s.code} (ID {s.subBatchId}) — {s.availableUnits} available
+                  {s.code} — {s.availableUnits} available
                 </option>
               ))}
             </select>
-
             {selectedSubBatch && (
               <div style={{ fontSize: 12, color: "#374151", marginTop: 6 }}>
                 <div>
                   <strong>Available:</strong> {selectedSubBatch.availableUnits}{" "}
-                  <span style={{ color: "#9ca3af" }}>
-                    (Assigned: {selectedSubBatch.assignedUnits}, Total:{" "}
-                    {selectedSubBatch.totalUnits})
-                  </span>
+                  <span style={{ color: "#9ca3af" }}>(Assigned: {selectedSubBatch.assignedUnits}, Total: {selectedSubBatch.totalUnits})</span>
                 </div>
-                <div>
-                  <strong>Expiry:</strong>{" "}
-                  {selectedSubBatch.expiry ?? "— (not set)"}
-                </div>
+                <div><strong>Expiry:</strong> {selectedSubBatch.expiry ?? "— (not set)"}</div>
               </div>
             )}
           </div>
-
           <div>
-            <label style={{ fontSize: 12, marginBottom: 4, display: "block" }}>
-              Quantity
-            </label>
+            <label style={{ fontSize: 12, marginBottom: 4, display: "block" }}>Quantity</label>
             <input
               type="number"
               min={1}
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
-              style={{
-                width: "100%",
-                padding: 8,
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-              }}
+              style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid #d1d5db" }}
             />
-
             <button
               onClick={handleAssignByQuantity}
               disabled={loadingAssign}
-              style={{
-                marginTop: 10,
-                padding: "8px 14px",
-                borderRadius: 999,
-                border: "none",
-                background: "#4f46e5",
-                color: "#fff",
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: "pointer",
-                opacity: loadingAssign ? 0.7 : 1,
-              }}
+              style={{ marginTop: 10, padding: "8px 14px", borderRadius: 999, border: "none", background: "#4f46e5", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: loadingAssign ? 0.7 : 1 }}
             >
               {loadingAssign ? "Assigning…" : "Assign units"}
             </button>
@@ -593,99 +434,43 @@ export default function OrderAssign() {
         </div>
       )}
 
-      {error && (
-        <p style={{ marginTop: 8, color: "#b91c1c", fontSize: 12 }}>{error}</p>
-      )}
-
-      {success && (
-        <p style={{ marginTop: 8, color: "#166534", fontSize: 12 }}>{success}</p>
-      )}
+      {error && <p style={{ marginTop: 8, color: "#b91c1c", fontSize: 12 }}>{error}</p>}
+      {success && <p style={{ marginTop: 8, color: "#166534", fontSize: 12 }}>{success}</p>}
 
       {assignedNow && assignedNow.length > 0 && (
-        <div
-          style={{
-            marginTop: 12,
-            padding: 12,
-            borderRadius: 10,
-            background: "#f9fafb",
-            border: "1px solid #e5e7eb",
-          }}
-        >
-          <h3 style={{ fontSize: 14, marginBottom: 8 }}>
-            Assigned this action
-          </h3>
+        <div style={{ marginTop: 12, padding: 12, borderRadius: 10, background: "#f9fafb", border: "1px solid #e5e7eb" }}>
+          <h3 style={{ fontSize: 14, marginBottom: 8 }}>Assigned this action</h3>
           <ul style={{ fontSize: 13, color: "#374151" }}>
             {assignedNow.map((r) => (
-              <li key={r.labelId}>
-                Label #{r.labelId} — Serial {r.serialNo} (Sub-batch {r.subBatchId})
-              </li>
+              <li key={r.labelId}>Serial {r.serialNo} (Sub-batch {r.subBatchId})</li>
             ))}
           </ul>
         </div>
       )}
 
       {selectedOrderId && (
-        <div
-          style={{
-            marginTop: 14,
-            padding: 12,
-            borderRadius: 10,
-            background: "#ffffff",
-            border: "1px solid #e5e7eb",
-          }}
-        >
+        <div style={{ marginTop: 14, padding: 12, borderRadius: 10, background: "#ffffff", border: "1px solid #e5e7eb" }}>
           <h3 style={{ fontSize: 14, marginBottom: 8 }}>
-            Assigned units for this order{" "}
-            {loadingAssignedList ? "(loading…)" : ""}
+            Assigned units for this order {loadingAssignedList ? "(loading…)" : ""}
           </h3>
-
           <div style={{ fontSize: 12, color: "#6b7280", marginBottom: 8 }}>
             Total assigned: <strong>{assignedForOrder.length}</strong>
           </div>
-
           {assignedForOrder.length === 0 ? (
-            <div style={{ fontSize: 13, color: "#6b7280" }}>
-              No units assigned yet.
-            </div>
+            <div style={{ fontSize: 13, color: "#6b7280" }}>No units assigned yet.</div>
           ) : (
-            <table
-              style={{
-                width: "100%",
-                borderCollapse: "collapse",
-                fontSize: 13,
-              }}
-            >
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
               <thead>
                 <tr style={{ textAlign: "left" }}>
-                  <th style={{ padding: "6px 4px", borderBottom: "1px solid #e5e7eb" }}>
-                    Serial
-                  </th>
-                  <th style={{ padding: "6px 4px", borderBottom: "1px solid #e5e7eb" }}>
-                    Label ID
-                  </th>
-                  <th style={{ padding: "6px 4px", borderBottom: "1px solid #e5e7eb" }}>
-                    Sub-batch
-                  </th>
-                  <th style={{ padding: "6px 4px", borderBottom: "1px solid #e5e7eb" }}>
-                    Assigned At
-                  </th>
+                  <th style={{ padding: "6px 4px", borderBottom: "1px solid #e5e7eb" }}>Serial</th>
+                  <th style={{ padding: "6px 4px", borderBottom: "1px solid #e5e7eb" }}>Sub-batch</th>
                 </tr>
               </thead>
               <tbody>
-                {assignedForOrder.map((r) => (
-                  <tr key={r.assignedId}>
-                    <td style={{ padding: "6px 4px", borderBottom: "1px solid #f3f4f6" }}>
-                      {r.serialNo}
-                    </td>
-                    <td style={{ padding: "6px 4px", borderBottom: "1px solid #f3f4f6" }}>
-                      {r.labelId}
-                    </td>
-                    <td style={{ padding: "6px 4px", borderBottom: "1px solid #f3f4f6" }}>
-                      {r.subBatchId}
-                    </td>
-                    <td style={{ padding: "6px 4px", borderBottom: "1px solid #f3f4f6" }}>
-                      {r.assignedAt ?? "—"}
-                    </td>
+                {assignedForOrder.map((r, i) => (
+                  <tr key={i}>
+                    <td style={{ padding: "6px 4px", borderBottom: "1px solid #f3f4f6" }}>{r.serialNo}</td>
+                    <td style={{ padding: "6px 4px", borderBottom: "1px solid #f3f4f6" }}>{r.subBatchId}</td>
                   </tr>
                 ))}
               </tbody>

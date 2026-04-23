@@ -8,7 +8,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/sub-batches")
-@CrossOrigin(origins = "http://localhost:5173")
 public class SubBatchController {
 
     private final JdbcTemplate jdbc;
@@ -25,23 +24,25 @@ public class SubBatchController {
                 sb.code as sub_batch_code,
                 p.id as product_id,
                 p.name as product_name,
-                sb.best_before,
-                count(l.id) as total_units,
-                count(au.id) as assigned_units,
-                count(l.id) - count(au.id) as available_units
+                sb.expiry as best_before,
+                count(l.serial_no) as total_units,
+                count(au.unit_serial_no) as assigned_units,
+                count(l.serial_no) - count(au.unit_serial_no) as available_units
             from sub_batches sb
             join labels l on l.sub_batch_id = sb.id
-            left join assigned_units au on au.label_id = l.id
+            left join assigned_units au
+                on au.sub_batch_id = sb.id
+                and au.unit_serial_no = l.serial_no
             left join products p on p.id = sb.product_id
-            group by sb.id, sb.code, p.id, p.name, sb.best_before
-            having count(l.id) - count(au.id) > 0
-            order by sb.id desc
+            group by sb.id, sb.code, p.id, p.name, sb.expiry
+            having count(l.serial_no) - count(au.unit_serial_no) > 0
+            order by sb.code asc
             """;
 
         return jdbc.query(sql, (rs, rowNum) -> new SubBatchAvailableDto(
-                rs.getLong("sub_batch_id"),
+                rs.getString("sub_batch_id"),
                 rs.getString("sub_batch_code"),
-                rs.getObject("product_id") != null ? rs.getLong("product_id") : null,
+                rs.getString("product_id"),
                 rs.getString("product_name"),
                 rs.getObject("best_before", Date.class) != null
                         ? rs.getObject("best_before", Date.class).toLocalDate()

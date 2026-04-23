@@ -7,6 +7,7 @@ import java.sql.Date;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Service
 public class VerificationService {
@@ -32,7 +33,7 @@ public class VerificationService {
             // 1) Find label by exact QR payload
             List<Map<String, Object>> labelRows = jdbc.queryForList(
                     """
-                    select id, sub_batch_id
+                    select id, sub_batch_id, serial_no
                     from labels
                     where qr_payload = ?
                     limit 1
@@ -59,13 +60,15 @@ public class VerificationService {
             }
 
             Map<String, Object> label = labelRows.get(0);
-            Object labelId = label.get("id");
-            Object subBatchId = label.get("sub_batch_id");
+            UUID subBatchId = asUUID(label.get("sub_batch_id"));
+            Integer serialNo = label.get("serial_no") != null
+                    ? ((Number) label.get("serial_no")).intValue()
+                    : null;
 
             // 2) Load sub-batch
             String subBatchCode = null;
-            Object parentBatchId = null;
-            Object productId = null;
+            UUID parentBatchId = null;
+            UUID productId = null;
             LocalDate expiry = null;
 
             if (subBatchId != null) {
@@ -82,15 +85,15 @@ public class VerificationService {
                 if (!subRows.isEmpty()) {
                     Map<String, Object> sub = subRows.get(0);
                     subBatchCode = asString(sub.get("code"));
-                    parentBatchId = sub.get("parent_batch_id");
-                    productId = sub.get("product_id");
+                    parentBatchId = asUUID(sub.get("parent_batch_id"));
+                    productId = asUUID(sub.get("product_id"));
                     expiry = asLocalDate(sub.get("expiry"));
                 }
             }
 
             // 3) Load batch
             String batchCode = null;
-            Object supplierId = null;
+            UUID supplierId = null;
             LocalDate bestBefore = null;
 
             if (parentBatchId != null) {
@@ -107,7 +110,7 @@ public class VerificationService {
                 if (!batchRows.isEmpty()) {
                     Map<String, Object> batch = batchRows.get(0);
                     batchCode = asString(batch.get("code"));
-                    supplierId = batch.get("supplier_id");
+                    supplierId = asUUID(batch.get("supplier_id"));
                     bestBefore = asLocalDate(batch.get("best_before"));
                 }
             }
@@ -150,20 +153,22 @@ public class VerificationService {
                 }
             }
 
-            // 6) Check assignment only (no assigned_at / no id ordering for now)
+            // 6) Check assignment using real schema:
+            // assigned_units has sub_batch_id + unit_serial_no, not label_id
             boolean assigned = false;
 
-            if (labelId != null) {
+            if (subBatchId != null && serialNo != null) {
                 List<Map<String, Object>> assignedRows = jdbc.queryForList(
                         """
-                        select order_id
+                        select order_item_id
                         from assigned_units
-                        where label_id = ?
+                        where sub_batch_id = ?
+                        and unit_serial_no = ?
                         limit 1
                         """,
-                        labelId
+                        subBatchId,
+                        serialNo
                 );
-
                 assigned = !assignedRows.isEmpty();
             }
 
@@ -185,8 +190,6 @@ public class VerificationService {
             }
 
             dto.setAssigned(assigned);
-
-            // Leave destination details empty for now until Step 2
             dto.setOrderId(null);
             dto.setOrderNumber(null);
             dto.setCustomerName(null);
@@ -197,7 +200,6 @@ public class VerificationService {
 
         } catch (Exception e) {
             e.printStackTrace();
-
             dto.setValid(false);
             dto.setMessage("Verification query failed: " + e.getMessage());
             dto.setExpired(false);
@@ -212,9 +214,14 @@ public class VerificationService {
             dto.setCustomerName(null);
             dto.setCustomerEmail(null);
             dto.setAssignedAt(null);
-
             return dto;
         }
+    }
+
+    private UUID asUUID(Object value) {
+        if (value == null) return null;
+        if (value instanceof UUID u) return u;
+        return UUID.fromString(value.toString());
     }
 
     private String asString(Object value) {

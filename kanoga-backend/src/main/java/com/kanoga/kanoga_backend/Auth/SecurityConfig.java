@@ -16,6 +16,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.Arrays;
+import java.util.List;
 
 @Configuration
 public class SecurityConfig {
@@ -27,27 +28,51 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                        .requestMatchers("/api/auth/login", "/api/db/ping", "/api/verify").permitAll()
+                        .requestMatchers(
+                                "/api/auth/login",
+                                "/api/db/ping",
+                                "/api/verify",
+                                "/api/orders",
+                                "/api/orders/**",
+                                "/api/woo/webhook"
+                        ).permitAll()
                         .anyRequest().authenticated()
                 )
-                .httpBasic(Customizer.withDefaults());
+                .httpBasic(basic -> basic
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            String path = request.getRequestURI();
+                            if (path.startsWith("/api/woo/")) {
+                                response.setStatus(200);
+                            } else {
+                                response.setStatus(401);
+                                response.setHeader("WWW-Authenticate", "Basic realm=\"Kanoga\"");
+                            }
+                        })
+                );
 
         return http.build();
     }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
+        CorsConfiguration frontendConfig = new CorsConfiguration();
+        frontendConfig.setAllowedOrigins(List.of("http://localhost:5173"));
+        frontendConfig.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        frontendConfig.setAllowedHeaders(List.of("*"));
+        frontendConfig.setExposedHeaders(Arrays.asList("Authorization", "Content-Type"));
+        frontendConfig.setAllowCredentials(true);
+        frontendConfig.setMaxAge(3600L);
 
-        configuration.setAllowedOrigins(Arrays.asList("http://localhost:5173"));
-        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        configuration.setAllowedHeaders(Arrays.asList("*"));
-        configuration.setExposedHeaders(Arrays.asList("Authorization", "Content-Type"));
-        configuration.setAllowCredentials(true);
-        configuration.setMaxAge(3600L);
+
+        CorsConfiguration webhookConfig = new CorsConfiguration();
+        webhookConfig.setAllowedOriginPatterns(List.of("*"));
+        webhookConfig.setAllowedMethods(List.of("POST", "OPTIONS"));
+        webhookConfig.setAllowedHeaders(List.of("*"));
+        webhookConfig.setAllowCredentials(false);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", configuration);
+        source.registerCorsConfiguration("/api/woo/**", webhookConfig);
+        source.registerCorsConfiguration("/**", frontendConfig);
         return source;
     }
 

@@ -3,9 +3,9 @@ package com.kanoga.kanoga_backend.subbatch;
 import java.time.LocalDate;
 
 public record SubBatchAvailableDto(
-        Long subBatchId,
+        String subBatchId,
         String subBatchCode,
-        Long productId,
+        String productId,
         String productName,
         LocalDate bestBefore,
         Long totalUnits,
