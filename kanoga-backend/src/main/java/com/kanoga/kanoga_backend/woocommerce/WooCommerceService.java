@@ -40,6 +40,7 @@ public class WooCommerceService {
         switch (topic) {
             case "order.created" -> handleOrderCreated(payload);
             case "order.updated" -> handleOrderUpdated(payload);
+            case "order.completed" -> handleOrderCreated(payload);
             default -> {} // ignore other topics
         }
     }
