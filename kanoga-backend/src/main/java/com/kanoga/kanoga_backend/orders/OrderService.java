@@ -9,8 +9,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-
-
 @Service
 public class OrderService {
 
@@ -59,7 +57,6 @@ public class OrderService {
             throw new IllegalArgumentException("orderNumber is required");
         }
 
-        // Find existing customer by email
         UUID customerId = null;
         String resolvedName = customerName.isEmpty() ? "Guest" : customerName;
 
@@ -74,7 +71,6 @@ public class OrderService {
             }
         }
 
-        // Create customer if not found
         if (customerId == null) {
             customerId = UUID.randomUUID();
             jdbc.update(
@@ -85,7 +81,6 @@ public class OrderService {
             );
         }
 
-        // Create order
         UUID orderId = UUID.randomUUID();
         jdbc.update(
                 "insert into orders (id, order_no, customer_id) values (?, ?, ?)",
@@ -111,7 +106,32 @@ public class OrderService {
             throw new IllegalArgumentException("subBatchId and quantity are required");
         }
 
-        UUID subBatchUUID = UUID.fromString(req.subBatchId().toString());
+        List<Map<String, Object>> orderItemRows = jdbc.queryForList(
+                """
+                select coalesce(sum(oi.qty_ordered), 0) as total_ordered,
+                       coalesce((
+                         select count(*) from assigned_units au
+                         join order_items oi2 on oi2.id = au.order_item_id
+                         where oi2.order_id = ?
+                       ), 0) as total_assigned
+                from order_items oi
+                where oi.order_id = ?
+                """,
+                orderUUID, orderUUID
+        );
+
+        if (!orderItemRows.isEmpty()) {
+            long totalOrdered = ((Number) orderItemRows.get(0).get("total_ordered")).longValue();
+            long totalAssigned = ((Number) orderItemRows.get(0).get("total_assigned")).longValue();
+            if (totalAssigned + req.quantity() > totalOrdered) {
+                throw new IllegalArgumentException(
+                        "Cannot assign " + req.quantity() + " units — order only requires " +
+                                totalOrdered + " total and " + totalAssigned + " are already assigned"
+                );
+            }
+        }
+
+        UUID subBatchUUID = UUID.fromString(req.subBatchId());
 
         String sql = """
             select serial_no
@@ -220,24 +240,26 @@ public class OrderService {
         requireOrderExists(orderUUID);
 
         String sql = """
-        select
-          au.id as assigned_id,
-          oi.order_id,
-          au.unit_serial_no,
-          au.sub_batch_id
-        from assigned_units au
-        join order_items oi on oi.id = au.order_item_id
-        where oi.order_id = ?
-        order by au.unit_serial_no
-        """;
+            select
+              au.unit_serial_no,
+              au.sub_batch_id::text as sub_batch_id,
+              sb.code as sub_batch_code,
+              p.name as product_name,
+              sb.expiry::text as expiry
+            from assigned_units au
+            join order_items oi on oi.id = au.order_item_id
+            join sub_batches sb on sb.id = au.sub_batch_id
+            left join products p on p.id = sb.product_id
+            where oi.order_id = ?
+            order by au.unit_serial_no
+            """;
 
         return jdbc.query(sql, (rs, rowNum) -> new OrderAssignedUnitDto(
-                0L,
-                0L,
-                rs.getLong("unit_serial_no"),
-                null,
                 rs.getInt("unit_serial_no"),
-                0L
+                rs.getString("sub_batch_id"),
+                rs.getString("sub_batch_code"),
+                rs.getString("product_name"),
+                rs.getString("expiry")
         ), orderUUID);
     }
 }
