@@ -9,5 +9,4 @@ public record RecallResultDto(
         int affectedOrders,
         int affectedCustomers,
         List<RecallAffectedUnitDto> units
-) {
-}
+) {}

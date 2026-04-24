@@ -1,39 +1,44 @@
 package com.kanoga.kanoga_backend.Alerts;
 
-
-
 import jakarta.persistence.*;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.util.UUID;
 
 @Entity
-@Table(name = "Alerts")
+@Table(name = "alerts")
 public class Alert {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(name = "id")
+    private UUID id;
 
-    private String alertType;
+    @Column(name = "type")
+    private String type;
+
+    @Column(name = "target_type")
+    private String targetType;
+
+    @Column(name = "target_id")
+    private UUID targetId;
+
+    @Column(name = "message")
     private String message;
+
+    @Column(name = "severity")
     private String severity;
-    private LocalDateTime createdAt;
-    private Long batchId;
-    private Long subBatchId;
 
-    public Alert() {}
+    @Column(name = "created_at")
+    private OffsetDateTime createdAt;
 
-    public Alert(String alertType, String message, String severity, Long subBatchId) {
-        this.alertType = alertType;
-        this.message = message;
-        this.severity = severity;
-        this.subBatchId = subBatchId;
-        this.createdAt = LocalDateTime.now();
-    }
+    @Column(name = "resolved_at")
+    private OffsetDateTime resolvedAt;
 
-
-    public Long getId() { return id; }
-    public String getAlertType() { return alertType; }
+    public UUID getId() { return id; }
+    public String getType() { return type; }
+    public String getTargetType() { return targetType; }
+    public UUID getTargetId() { return targetId; }
     public String getMessage() { return message; }
     public String getSeverity() { return severity; }
-    public LocalDateTime getCreatedAt() { return createdAt; }
+    public OffsetDateTime getCreatedAt() { return createdAt; }
+    public OffsetDateTime getResolvedAt() { return resolvedAt; }
 }

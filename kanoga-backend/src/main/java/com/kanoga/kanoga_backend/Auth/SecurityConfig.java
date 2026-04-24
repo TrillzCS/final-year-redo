@@ -34,7 +34,8 @@ public class SecurityConfig {
                                 "/api/verify",
                                 "/api/orders",
                                 "/api/orders/**",
-                                "/api/woo/webhook"
+                                "/api/woo/webhook",
+                                "/api/alerts/**"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )

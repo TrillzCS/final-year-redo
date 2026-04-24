@@ -1,12 +1,10 @@
 package com.kanoga.kanoga_backend.Alerts;
 
 import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
 
 @RestController
 @RequestMapping("/api/alerts")
-@CrossOrigin(origins = "http://localhost:5173")
 public class AlertController {
 
     private final AlertRepository alertRepository;
