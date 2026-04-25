@@ -33,6 +33,7 @@ public class SecurityConfig {
                                 "/api/db/ping",
                                 "/api/verify",
                                 "/api/orders",
+                                "/api/alerts/**",
                                 "/api/orders/**",
                                 "/api/woo/webhook",
                                 "/api/alerts/**"
