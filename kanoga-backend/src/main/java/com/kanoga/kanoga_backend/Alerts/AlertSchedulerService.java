@@ -38,8 +38,9 @@ public class AlertSchedulerService {
             );
             if (!existing.isEmpty()) continue;
 
-            String message = "Sub-batch " + sub.getCode() + " is expiring soon (expiry: " + sub.getExpiry() + ")";
             String severity = sub.getExpiry().isBefore(LocalDate.now().plusDays(7)) ? "CRITICAL" : "HIGH";
+            String message = "Sub-batch " + sub.getCode() + " is expiring on " + sub.getExpiry()
+                    + " (" + java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), sub.getExpiry()) + " days remaining)";
 
             jdbc.update(
                     "insert into alerts (id, type, target_type, target_id, message, severity, created_at) values (?, ?, ?, ?, ?, ?, ?)",
