@@ -4,11 +4,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
-public interface SubBatchRepository extends JpaRepository<SubBatch, Long> {
+public interface SubBatchRepository extends JpaRepository<SubBatch, UUID> {
 
-    // find items whose expiry is before a threshold
+    /** Sub-batches expiring before the given date, used by the expiry alert scheduler. */
     List<SubBatch> findByExpiryBefore(LocalDate date);
 }
-
-

@@ -1,5 +1,6 @@
 package com.kanoga.kanoga_backend.Auth;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -21,6 +22,10 @@ import java.util.List;
 @Configuration
 public class SecurityConfig {
 
+    /** Origins permitted to call the API from a browser, comma-separated. */
+    @Value("${app.cors.allowed-origins:http://localhost:5173}")
+    private String allowedOrigins;
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
@@ -30,13 +35,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(
                                 "/api/auth/login",
-                                "/api/db/ping",
                                 "/api/verify",
-                                "/api/orders",
-                                "/api/alerts/**",
-                                "/api/orders/**",
-                                "/api/woo/webhook",
-                                "/api/alerts/**"
+                                "/api/woo/webhook"
                         ).permitAll()
                         .anyRequest().authenticated()
                 )
@@ -57,14 +57,18 @@ public class SecurityConfig {
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
+        List<String> origins = Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
+
         CorsConfiguration frontendConfig = new CorsConfiguration();
-        frontendConfig.setAllowedOrigins(List.of("http://localhost:5173"));
+        frontendConfig.setAllowedOrigins(origins);
         frontendConfig.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         frontendConfig.setAllowedHeaders(List.of("*"));
         frontendConfig.setExposedHeaders(Arrays.asList("Authorization", "Content-Type"));
         frontendConfig.setAllowCredentials(true);
         frontendConfig.setMaxAge(3600L);
-
 
         CorsConfiguration webhookConfig = new CorsConfiguration();
         webhookConfig.setAllowedOriginPatterns(List.of("*"));

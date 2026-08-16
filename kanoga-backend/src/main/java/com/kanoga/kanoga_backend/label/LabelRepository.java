@@ -2,9 +2,7 @@ package com.kanoga.kanoga_backend.label;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import java.util.Optional;
+import java.util.UUID;
 
-public interface LabelRepository extends JpaRepository<Label, Long> {
-
-    Optional<Label> findByQrPayload(String qrPayload);
+public interface LabelRepository extends JpaRepository<Label, UUID> {
 }

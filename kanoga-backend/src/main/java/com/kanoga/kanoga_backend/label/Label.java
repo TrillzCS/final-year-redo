@@ -1,40 +1,32 @@
 package com.kanoga.kanoga_backend.label;
 
-import jakarta.persistence.*;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 
+import java.util.UUID;
+
+/** One printed label, identifying a single physical unit within a sub-batch. */
 @Entity
 @Table(name = "labels")
 public class Label {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(name = "id")
+    private UUID id;
 
+    @Column(name = "sub_batch_id")
+    private UUID subBatchId;
 
-    @Column(name = "sub_batch_id", nullable = false)
-    private Long subBatchId;
-
-
-    @Column(name = "serial_no", nullable = false)
+    @Column(name = "serial_no")
     private Integer serialNo;
 
-
-    @Column(name = "qr_payload", nullable = false, length = 500)
+    @Column(name = "qr_payload")
     private String qrPayload;
 
-    public Long getId() {
-        return id;
-    }
-
-    public Long getSubBatchId() {
-        return subBatchId;
-    }
-
-    public Integer getSerialNo() {
-        return serialNo;
-    }
-
-    public String getQrPayload() {
-        return qrPayload;
-    }
+    public UUID getId() { return id; }
+    public UUID getSubBatchId() { return subBatchId; }
+    public Integer getSerialNo() { return serialNo; }
+    public String getQrPayload() { return qrPayload; }
 }

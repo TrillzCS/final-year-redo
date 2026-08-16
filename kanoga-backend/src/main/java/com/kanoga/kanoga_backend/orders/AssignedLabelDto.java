@@ -1,3 +1,3 @@
 package com.kanoga.kanoga_backend.orders;
 
-public record AssignedLabelDto(Long labelId, Integer serialNo, String subBatchId) {}
+public record AssignedLabelDto(String labelId, Integer serialNo, String subBatchId) {}

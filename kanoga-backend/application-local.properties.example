@@ -1,0 +1,17 @@
+# Copy this file to `application-local.properties` (same folder) and fill in real
+# values. That file is git-ignored and must never be committed.
+#
+# On Railway these are set as service Variables instead, using the same names.
+
+# Supabase connection string. Use port 6543 (transaction pooler), not 5432.
+DB_URL=jdbc:postgresql://<your-project>.pooler.supabase.com:6543/postgres?sslmode=require
+DB_USERNAME=postgres.<your-project-ref>
+DB_PASSWORD=<your-supabase-database-password>
+
+# Shared secret configured on the WooCommerce webhook. Used to verify the
+# HMAC-SHA256 signature on incoming order webhooks.
+WOO_WEBHOOK_SECRET=<your-webhook-secret>
+
+# Optional overrides
+# APP_CORS_ALLOWED_ORIGINS=http://localhost:5173,https://your-deployed-frontend
+# JPA_SHOW_SQL=true

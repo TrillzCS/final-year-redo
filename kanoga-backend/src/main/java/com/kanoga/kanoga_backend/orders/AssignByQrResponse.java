@@ -4,9 +4,8 @@ import java.time.OffsetDateTime;
 
 public record AssignByQrResponse(
         String orderId,
-        Long labelId,
+        String labelId,
         Integer serialNo,
-        Long subBatchId,
+        String subBatchId,
         OffsetDateTime assignedAt
 ) {}
-
