@@ -7,7 +7,6 @@ export async function apiGet<T = unknown>(path: string): Promise<T> {
     }
     return res.json();
 
-
 }
 export type VerificationResult = {
     valid: boolean;

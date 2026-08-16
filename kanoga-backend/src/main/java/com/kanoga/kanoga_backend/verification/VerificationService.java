@@ -153,8 +153,6 @@ public class VerificationService {
                 }
             }
 
-            // 6) Check assignment using real schema:
-            // assigned_units has sub_batch_id + unit_serial_no, not label_id
             boolean assigned = false;
 
             if (subBatchId != null && serialNo != null) {

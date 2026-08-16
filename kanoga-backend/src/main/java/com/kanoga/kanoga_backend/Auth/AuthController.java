@@ -26,7 +26,6 @@ public class AuthController {
                 new UsernamePasswordAuthenticationToken(req.email(), req.password())
         );
 
-
         UserEntity u = users.findByEmail(req.email()).orElseThrow();
         return new LoginResponse(u.getEmail(), u.getRole());
     }

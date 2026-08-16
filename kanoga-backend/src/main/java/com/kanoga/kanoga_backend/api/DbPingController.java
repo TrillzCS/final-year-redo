@@ -1,4 +1,3 @@
-// src/main/java/com/kanoga/kanoga_backend/api/DbPingController.java
 package com.kanoga.kanoga_backend.api;
 
 import org.springframework.jdbc.core.JdbcTemplate;

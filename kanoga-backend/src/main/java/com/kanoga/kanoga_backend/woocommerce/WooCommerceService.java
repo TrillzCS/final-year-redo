@@ -2,213 +2,91 @@ package com.kanoga.kanoga_backend.woocommerce;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.beans.factory.annotation.Value;
+import com.kanoga.kanoga_backend.imports.ImportResultDto;
+import com.kanoga.kanoga_backend.imports.InboundOrder;
+import com.kanoga.kanoga_backend.imports.OrderImportService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
+/** Handles WooCommerce webhook topics. */
 @Service
 public class WooCommerceService {
 
+    private static final Logger log = LoggerFactory.getLogger(WooCommerceService.class);
+
     private final JdbcTemplate jdbc;
+    private final OrderImportService importService;
+    private final WooCommerceOrderAdapter adapter;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Value("${woocommerce.webhook.secret}")
-    private String webhookSecret;
-
-    public WooCommerceService(JdbcTemplate jdbc) {
+    public WooCommerceService(JdbcTemplate jdbc,
+                              OrderImportService importService,
+                              WooCommerceOrderAdapter adapter) {
         this.jdbc = jdbc;
+        this.importService = importService;
+        this.adapter = adapter;
     }
 
-    public void handleWebhook(String topic, String signature, String rawBody) throws Exception {
-        if (!isValidSignature(rawBody, signature)) {
-            throw new SecurityException("Invalid webhook signature");
-        }
+    /** Entry point for an incoming webhook. */
+    public void handleWebhook(String topic, String signature, String rawBody) {
+        Map<String, String> headers = Map.of(
+                "x-wc-webhook-signature", signature == null ? "" : signature);
+
+        adapter.verify(rawBody, headers);
 
         if (topic == null) return;
 
-        JsonNode payload = objectMapper.readTree(rawBody);
-
         switch (topic) {
-            case "order.created" -> handleOrderCreated(payload);
-            case "order.updated" -> handleOrderUpdated(payload);
-            default -> {}
+            case "order.created" -> handleOrderCreated(rawBody);
+            case "order.updated" -> handleOrderUpdated(rawBody);
+            default -> log.debug("Ignoring unhandled WooCommerce topic '{}'", topic);
         }
     }
 
     @Transactional
-    private void handleOrderCreated(JsonNode order) {
-        String wooOrderId = order.path("id").asText();
-        String orderNo = "WOO-" + wooOrderId;
-
-        List<Map<String, Object>> existing = jdbc.queryForList(
-                "select id from orders where order_no = ? limit 1", orderNo
-        );
-        if (!existing.isEmpty()) return;
-
-        JsonNode billing = order.path("billing");
-        String firstName = billing.path("first_name").asText("");
-        String lastName = billing.path("last_name").asText("");
-        String customerName = (firstName + " " + lastName).trim();
-        String customerEmail = billing.path("email").asText("");
-        String phone = billing.path("phone").asText("");
-        String address1 = billing.path("address_1").asText("");
-        String address2 = billing.path("address_2").asText("");
-        String city = billing.path("city").asText("");
-        String country = billing.path("country").asText("");
-        String postcode = billing.path("postcode").asText("");
-
-        if (customerName.isEmpty()) customerName = "WooCommerce Customer";
-
-
-        UUID customerId = null;
-        if (!customerEmail.isEmpty()) {
-            List<Map<String, Object>> existingCustomer = jdbc.queryForList(
-                    "select id from customers where email = ? limit 1", customerEmail
-            );
-            if (!existingCustomer.isEmpty()) {
-                customerId = UUID.fromString(existingCustomer.get(0).get("id").toString());
-                // Update name with latest from WooCommerce billing
-                jdbc.update(
-                        "update customers set name = ? where id = ?",
-                        customerName, customerId
-                );
-            }
-        }
-
-        if (customerId == null) {
-            customerId = UUID.randomUUID();
-            jdbc.update(
-                    """
-                    insert into customers (id, name, email, phone, address1, address2, city, country, eircode)
-                    values (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    customerId,
-                    customerName,
-                    customerEmail.isEmpty() ? null : customerEmail,
-                    phone.isEmpty() ? null : phone,
-                    address1.isEmpty() ? null : address1,
-                    address2.isEmpty() ? null : address2,
-                    city.isEmpty() ? null : city,
-                    country.isEmpty() ? null : country,
-                    postcode.isEmpty() ? null : postcode
-            );
-        }
-
-        UUID orderId = UUID.randomUUID();
-        String wooStatus = order.path("status").asText("pending");
-        String mappedStatus = mapWooStatus(wooStatus);
-
-        jdbc.update(
-                """
-                insert into orders (id, order_no, customer_id, status, placed_at, created_at)
-                values (?, ?, ?, ?::order_status, now(), now())
-                """,
-                orderId, orderNo, customerId, mappedStatus
-        );
-
-        JsonNode lineItems = order.path("line_items");
-        for (JsonNode item : lineItems) {
-            String sku = item.path("sku").asText("");
-            int qty = item.path("quantity").asInt(1);
-            UUID productId = findProductId(sku, item.path("name").asText(""));
-
-            UUID orderItemId = UUID.randomUUID();
-            jdbc.update(
-                    "insert into order_items (id, order_id, product_id, qty_ordered) values (?, ?, ?, ?)",
-                    orderItemId, orderId, productId, qty
-            );
-        }
+    public void handleOrderCreated(String rawBody) {
+        List<InboundOrder> orders = adapter.parse(rawBody);
+        ImportResultDto result = importService.persist(adapter.source(), orders);
+        result.warnings().forEach(w -> log.warn("WooCommerce import: {}", w));
     }
 
+    /** Applies a status change to an order that was previously imported. */
     @Transactional
-    private void handleOrderUpdated(JsonNode order) {
-        String wooOrderId = order.path("id").asText();
-        String orderNo = "WOO-" + wooOrderId;
-        String wooStatus = order.path("status").asText();
-        String mappedStatus = mapWooStatus(wooStatus);
-
-
-        JsonNode billing = order.path("billing");
-        String firstName = billing.path("first_name").asText("");
-        String lastName = billing.path("last_name").asText("");
-        String customerName = (firstName + " " + lastName).trim();
-
-        if (!customerName.isEmpty()) {
-            jdbc.update(
-                    """
-                    update customers set name = ?
-                    where id = (select customer_id from orders where order_no = ? limit 1)
-                    """,
-                    customerName, orderNo
-            );
-        }
-
-        jdbc.update(
-                "update orders set status = ?::order_status where order_no = ?",
-                mappedStatus, orderNo
-        );
-    }
-
-    private UUID findProductId(String sku, String name) {
-        if (!sku.isEmpty()) {
-            List<Map<String, Object>> rows = jdbc.queryForList(
-                    "select id from products where sku = ? limit 1", sku
-            );
-            if (!rows.isEmpty()) {
-                return UUID.fromString(rows.get(0).get("id").toString());
-            }
-        }
-
-        if (!name.isEmpty()) {
-            List<Map<String, Object>> rows = jdbc.queryForList(
-                    "select id from products where lower(name) = lower(?) limit 1", name
-            );
-            if (!rows.isEmpty()) {
-                return UUID.fromString(rows.get(0).get("id").toString());
-            }
-
-            List<Map<String, Object>> partialRows = jdbc.queryForList(
-                    "select id from products where lower(name) like lower(?) limit 1",
-                    "%" + name + "%"
-            );
-            if (!partialRows.isEmpty()) {
-                return UUID.fromString(partialRows.get(0).get("id").toString());
-            }
-        }
-
-        return null;
-    }
-
-    private String mapWooStatus(String wooStatus) {
-        return switch (wooStatus) {
-            case "processing", "on-hold" -> "NEW";
-            case "completed" -> "DISPATCHED";
-            case "cancelled", "refunded", "failed" -> "CANCELLED";
-            default -> "NEW";
-        };
-    }
-
-    private boolean isValidSignature(String body, String signature) {
-        if (signature == null || signature.isEmpty()) return false;
+    public void handleOrderUpdated(String rawBody) {
+        JsonNode order;
         try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            SecretKeySpec secretKey = new SecretKeySpec(
-                    webhookSecret.getBytes(), "HmacSHA256"
-            );
-            mac.init(secretKey);
-            byte[] hash = mac.doFinal(body.getBytes());
-            String computed = Base64.getEncoder().encodeToString(hash);
-            return computed.equals(signature);
+            order = objectMapper.readTree(rawBody);
         } catch (Exception e) {
-            return false;
+            throw new IllegalArgumentException("Webhook body is not valid JSON: " + e.getMessage());
+        }
+
+        String orderNo = "WOO-" + order.path("id").asText("");
+        String mappedStatus = adapter.mapStatus(order.path("status").asText(""));
+
+        int rows = jdbc.update(
+                "update orders set status = ?::order_status where order_no = ?",
+                mappedStatus, orderNo);
+
+        if (rows == 0) {
+            log.warn("WooCommerce sent an update for {}, which is not in the system — ignoring",
+                    orderNo);
+            return;
+        }
+
+        JsonNode billing = order.path("billing");
+        String name = (billing.path("first_name").asText("") + " "
+                + billing.path("last_name").asText("")).trim();
+        if (!name.isEmpty()) {
+            jdbc.update("""
+                update customers set name = ?
+                where id = (select customer_id from orders where order_no = ? limit 1)
+                """, name, orderNo);
         }
     }
 }

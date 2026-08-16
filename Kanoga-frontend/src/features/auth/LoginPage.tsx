@@ -36,7 +36,6 @@ export function LoginPage({ onLogin }: LoginPageProps) {
 
       const data: LoginResponse = await res.json();
 
-
       onLogin({ email: data.email, role: data.role, password });
     } catch (err) {
       console.error(err);

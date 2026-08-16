@@ -12,6 +12,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.78.0",
     "dayjs": "^1.11.19",
+    "jsbarcode": "^3.12.3",
     "jsqr": "^1.4.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.1.1",
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.36.0",
+    "@types/jsbarcode": "^3.11.4",
     "@types/node": "^24.6.0",
     "@types/react": "^19.1.16",
     "@types/react-dom": "^19.1.9",

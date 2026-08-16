@@ -10,10 +10,8 @@ public class VerificationResultDto {
     private String batchCode;
     private String supplierName;
 
-
     private String bestBefore;
     private boolean expired;
-
 
     private boolean assigned;
     private Long orderId;
