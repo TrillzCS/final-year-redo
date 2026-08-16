@@ -1,12 +1,49 @@
 import { useEffect, useMemo, useState } from "react";
-import { apiGet, apiPost } from "../../lib/apiClient";
+import { apiGet, apiPatch, apiPost } from "../../lib/apiClient";
 import { useAuth } from "../auth/AuthContext";
 
-type Order = { id: string; orderNumber?: string; customerName?: string; customerEmail?: string };
-type AssignedLabelDto = { labelId: number; serialNo: number; subBatchId: string };
-type OrderAssignedUnitDto = { serialNo: number; subBatchId: string; subBatchCode: string; productName: string | null; expiry: string | null };
-type SubBatchAvailableDto = { subBatchId: string; code: string; expiry: string | null; totalUnits: number; assignedUnits: number; availableUnits: number };
-type AssignByQrResponse = { orderId: string; labelId: number; serialNo: number; subBatchId: number; assignedAt: string };
+type Order = {
+  id: string;
+  orderNumber?: string;
+  customerName?: string;
+  customerEmail?: string;
+  status: OrderStatus;
+  qtyOrdered: number;
+  qtyAssigned: number;
+  qtyReturned: number;
+  fulfilment: "MANUAL" | "MANUAL_PICKED" | "UNFULFILLED" | "PARTIAL" | "FULFILLED";
+  placedAt?: string | null;
+  dispatchedAt?: string | null;
+};
+type OrderStatus = "NEW" | "PICKING" | "DISPATCHED" | "RETURNED" | "CANCELLED";
+
+const NEXT_STATES: Record<OrderStatus, OrderStatus[]> = {
+  NEW: ["PICKING", "CANCELLED"],
+  PICKING: ["NEW", "DISPATCHED", "CANCELLED"],
+  DISPATCHED: ["RETURNED"],
+  RETURNED: [],
+  CANCELLED: [],
+};
+
+const STATUS_STYLE: Record<OrderStatus, { bg: string; fg: string }> = {
+  NEW:        { bg: "#eff6ff", fg: "#1d4ed8" },
+  PICKING:    { bg: "#fefce8", fg: "#a16207" },
+  DISPATCHED: { bg: "#f0fdf4", fg: "#15803d" },
+  RETURNED:   { bg: "#fff7ed", fg: "#c2410c" },
+  CANCELLED:  { bg: "#f3f4f6", fg: "#6b7280" },
+};
+
+const FULFILMENT_LABEL: Record<Order["fulfilment"], string> = {
+  MANUAL: "No quantity declared",
+  MANUAL_PICKED: "Picked (manual order)",
+  UNFULFILLED: "Nothing picked",
+  PARTIAL: "Partially fulfilled",
+  FULFILLED: "Fully picked",
+};
+type AssignedLabelDto = { labelId: string; serialNo: number; subBatchId: string };
+type OrderAssignedUnitDto = { serialNo: number; subBatchId: string; subBatchCode: string; productName: string | null; expiry: string | null; returnedAt: string | null };
+type SubBatchAvailableDto = { subBatchId: string; subBatchCode: string; productName: string | null; bestBefore: string | null; totalUnits: number; assignedUnits: number; availableUnits: number };
+type AssignByQrResponse = { orderId: string; labelId: string; serialNo: number; subBatchId: string; assignedAt: string };
 type CreateOrderRequest = { orderNumber: string; customerName: string; customerEmail: string };
 type Mode = "quantity" | "scan";
 
@@ -35,7 +72,10 @@ export default function OrderAssign() {
   const [loadingAssign, setLoadingAssign] = useState(false);
   const [loadingAssignedList, setLoadingAssignedList] = useState(false);
   const [creatingOrder, setCreatingOrder] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [returningSerial, setReturningSerial] = useState<number | null>(null);
 
+  const selectedOrder = useMemo(() => orders.find((o) => o.id === selectedOrderId) ?? null, [orders, selectedOrderId]);
   const selectedSubBatch = useMemo(() => subBatches.find((s) => s.subBatchId === selectedSubBatchId) ?? null, [selectedSubBatchId, subBatches]);
 
   async function loadOrders() {
@@ -91,6 +131,35 @@ export default function OrderAssign() {
     finally { setCreatingOrder(false); }
   }
 
+  async function handleStatusChange(next: OrderStatus) {
+    setError(null); setSuccess(null);
+    if (!auth || !selectedOrderId) return;
+    try {
+      setUpdatingStatus(true);
+      const updated = await apiPatch<{ status: OrderStatus }, Order>(`/api/orders/${selectedOrderId}/status`, { status: next }, auth);
+      setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+      setSuccess(`Order moved to ${next}.`);
+    } catch (e: any) { setError(e.message || "Could not update the order status."); }
+    finally { setUpdatingStatus(false); }
+  }
+
+  async function handleReturnUnit(unit: OrderAssignedUnitDto) {
+    setError(null); setSuccess(null);
+    if (!auth || !selectedOrderId) return;
+    try {
+      setReturningSerial(unit.serialNo);
+      const updated = await apiPost<{ subBatchId: string; serialNo: number }, Order>(
+        `/api/orders/${selectedOrderId}/returns`,
+        { subBatchId: unit.subBatchId, serialNo: unit.serialNo },
+        auth
+      );
+      setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)));
+      setSuccess(`Serial ${unit.serialNo} marked as returned and quarantined.`);
+      await refreshAssigned(selectedOrderId);
+    } catch (e: any) { setError(e.message || "Could not record the return."); }
+    finally { setReturningSerial(null); }
+  }
+
   async function handleAssignByQuantity() {
     setError(null); setSuccess(null); setAssignedNow(null); setLastScan(null);
     if (!auth) return setError("Not authenticated.");
@@ -103,7 +172,7 @@ export default function OrderAssign() {
       const data = await apiPost<{ subBatchId: string; quantity: number }, AssignedLabelDto[]>(`/api/orders/${selectedOrderId}/assign`, { subBatchId: selectedSubBatchId, quantity: qty }, auth);
       setAssignedNow(data);
       setSuccess(`${data.length} unit(s) assigned successfully.`);
-      await Promise.all([refreshAssigned(selectedOrderId), refreshSubBatches()]);
+      await Promise.all([refreshAssigned(selectedOrderId), refreshSubBatches(), loadOrders()]);
     } catch (e: any) { setError(e.message || "Assignment failed."); }
     finally { setLoadingAssign(false); }
   }
@@ -118,7 +187,7 @@ export default function OrderAssign() {
       const resp = await apiPost<{ qrPayload: string }, AssignByQrResponse>(`/api/orders/${selectedOrderId}/assign-by-qr`, { qrPayload: qrPayload.trim() }, auth);
       setLastScan(resp); setQrPayload("");
       setSuccess(`Serial ${resp.serialNo} assigned to order.`);
-      await Promise.all([refreshAssigned(selectedOrderId), refreshSubBatches()]);
+      await Promise.all([refreshAssigned(selectedOrderId), refreshSubBatches(), loadOrders()]);
     } catch (e: any) { setError(e.message || "Scan assign failed."); }
     finally { setLoadingAssign(false); }
   }
@@ -150,7 +219,7 @@ export default function OrderAssign() {
           <label style={labelStyle}>Order {loadingOrders ? "(loading…)" : ""}</label>
           <select value={selectedOrderId ?? ""} onChange={(e) => setSelectedOrderId(e.target.value || null)} style={{ ...inputStyle, background: "#fff" }}>
             <option value="">Select an order…</option>
-            {orders.map((o) => <option key={o.id} value={o.id}>{o.orderNumber || `Order #${o.id}`}{o.customerName ? ` — ${o.customerName}` : ""}</option>)}
+            {orders.map((o) => <option key={o.id} value={o.id}>{o.orderNumber || `Order #${o.id}`}{o.customerName ? ` — ${o.customerName}` : ""} [{o.status}{o.qtyOrdered > 0 ? ` ${o.qtyAssigned}/${o.qtyOrdered}` : ""}]</option>)}
           </select>
         </div>
         <div style={{ display: "inline-flex", borderRadius: 8, background: "#f1f5f9", padding: 3, gap: 2 }}>
@@ -162,6 +231,69 @@ export default function OrderAssign() {
           ))}
         </div>
       </div>
+
+      {/* Order status + fulfilment progress */}
+      {selectedOrder && (
+        <div style={{ background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, marginBottom: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+            <span style={{ background: STATUS_STYLE[selectedOrder.status].bg, color: STATUS_STYLE[selectedOrder.status].fg, borderRadius: 999, padding: "4px 12px", fontSize: 12, fontWeight: 700, letterSpacing: 0.4 }}>
+              {selectedOrder.status}
+            </span>
+            <span style={{ fontSize: 13, color: "#374151" }}>
+              {FULFILMENT_LABEL[selectedOrder.fulfilment]}
+              {selectedOrder.qtyOrdered > 0 && (
+                <> — <strong>{selectedOrder.qtyAssigned}</strong> of <strong>{selectedOrder.qtyOrdered}</strong> units picked</>
+              )}
+              {selectedOrder.qtyReturned > 0 && (
+                <span style={{ color: "#c2410c" }}> · {selectedOrder.qtyReturned} returned</span>
+              )}
+            </span>
+            {selectedOrder.dispatchedAt && (
+              <span style={{ fontSize: 12, color: "#9ca3af" }}>Dispatched {new Date(selectedOrder.dispatchedAt).toLocaleDateString()}</span>
+            )}
+          </div>
+
+          {selectedOrder.qtyOrdered > 0 && (
+            <div style={{ height: 6, background: "#f1f5f9", borderRadius: 999, overflow: "hidden", marginBottom: 12 }}>
+              <div style={{
+                height: "100%",
+                width: `${Math.min(100, Math.round((selectedOrder.qtyAssigned / selectedOrder.qtyOrdered) * 100))}%`,
+                background: selectedOrder.fulfilment === "FULFILLED" ? "#22c55e" : "#f59e0b",
+                transition: "width 0.2s",
+              }} />
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            {NEXT_STATES[selectedOrder.status].length === 0 ? (
+              <span style={{ fontSize: 12, color: "#9ca3af" }}>
+                {selectedOrder.status} is a final status — no further changes possible.
+              </span>
+            ) : (
+              <>
+                <span style={{ fontSize: 12, color: "#6b7280", marginRight: 2 }}>Move to:</span>
+                {NEXT_STATES[selectedOrder.status].map((next) => (
+                  <button
+                    key={next}
+                    onClick={() => handleStatusChange(next)}
+                    disabled={updatingStatus}
+                    style={{
+                      padding: "6px 14px", borderRadius: 999, fontSize: 12, fontWeight: 600,
+                      cursor: updatingStatus ? "default" : "pointer",
+                      border: `1px solid ${next === "CANCELLED" ? "#fecaca" : "#d1d5db"}`,
+                      background: next === "CANCELLED" ? "#fef2f2" : "#f9fafb",
+                      color: next === "CANCELLED" ? "#b91c1c" : "#374151",
+                      opacity: updatingStatus ? 0.6 : 1,
+                    }}
+                  >
+                    {next}
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Assign panel */}
       <div style={{ background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 20, marginBottom: 14 }}>
@@ -184,14 +316,14 @@ export default function OrderAssign() {
               <label style={labelStyle}>Sub-batch {loadingSubBatches ? "(loading…)" : ""}</label>
               <select value={selectedSubBatchId ?? ""} onChange={(e) => setSelectedSubBatchId(e.target.value || null)} style={{ ...inputStyle, background: "#fff" }}>
                 <option value="">Select a sub-batch…</option>
-                {subBatches.map((s) => <option key={s.subBatchId} value={s.subBatchId}>{s.code} — {s.availableUnits} available</option>)}
+                {subBatches.map((s) => <option key={s.subBatchId} value={s.subBatchId}>{s.subBatchCode} — {s.availableUnits} available</option>)}
               </select>
               {selectedSubBatch && (
                 <div style={{ marginTop: 8, fontSize: 12, color: "#6b7280", background: "#f8fafc", padding: "8px 10px", borderRadius: 8 }}>
                   <span style={{ color: "#111827", fontWeight: 600 }}>{selectedSubBatch.availableUnits}</span> available &nbsp;·&nbsp;
                   <span>{selectedSubBatch.assignedUnits} assigned</span> &nbsp;·&nbsp;
                   <span>Total: {selectedSubBatch.totalUnits}</span>
-                  {selectedSubBatch.expiry && <span> &nbsp;·&nbsp; Expires: {selectedSubBatch.expiry}</span>}
+                  {selectedSubBatch.bestBefore && <span> &nbsp;·&nbsp; Expires: {selectedSubBatch.bestBefore}</span>}
                 </div>
               )}
             </div>
@@ -225,7 +357,7 @@ export default function OrderAssign() {
         <div style={{ background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 20 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
             <h3 style={{ margin: 0, fontSize: 15, fontWeight: 600, color: "#111827" }}>Assigned Units {loadingAssignedList ? "(loading…)" : ""}</h3>
-            <span style={{ background: "#f1f5f9", color: "#374151", borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 600 }}>{assignedForOrder.length} total</span>
+            <span style={{ background: "#f1f5f9", color: "#374151", borderRadius: 999, padding: "3px 10px", fontSize: 12, fontWeight: 600 }}>{assignedForOrder.filter(u => !u.returnedAt).length} with customer{assignedForOrder.some(u => u.returnedAt) ? ` · ${assignedForOrder.filter(u => u.returnedAt).length} returned` : ""}</span>
           </div>
           {assignedForOrder.length === 0 ? (
            <div style={{ fontSize: 13, color: "#9ca3af", textAlign: "center", padding: "20px 0" }}>No units assigned to this order yet.</div>
@@ -233,18 +365,38 @@ export default function OrderAssign() {
                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                          <thead>
                            <tr style={{ background: "#f8fafc" }}>
-                             {["Serial", "Sub-batch", "Product", "Expiry"].map(h => (
-                               <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase" as const, letterSpacing: 0.5, borderBottom: "1px solid #e5e7eb" }}>{h}</th>
+                             {["Serial", "Sub-batch", "Product", "Expiry", "State", ""].map(h => (
+                               <th key={h || "actions"} style={{ padding: "8px 10px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase" as const, letterSpacing: 0.5, borderBottom: "1px solid #e5e7eb" }}>{h}</th>
                              ))}
                            </tr>
                          </thead>
                          <tbody>
                            {assignedForOrder.map((r, i) => (
-                             <tr key={i} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                             <tr key={i} style={{ borderBottom: "1px solid #f1f5f9", opacity: r.returnedAt ? 0.6 : 1 }}>
                                <td style={{ padding: "9px 10px", fontWeight: 600 }}>{r.serialNo}</td>
                                <td style={{ padding: "9px 10px", color: "#374151", fontSize: 12, fontFamily: "monospace" }}>{r.subBatchCode}</td>
                                <td style={{ padding: "9px 10px", color: "#374151" }}>{r.productName ?? "—"}</td>
                                <td style={{ padding: "9px 10px", color: "#374151" }}>{r.expiry ?? "—"}</td>
+                               <td style={{ padding: "9px 10px" }}>
+                                 {r.returnedAt ? (
+                                   <span title={`Returned ${new Date(r.returnedAt).toLocaleString()} — quarantined, not returned to stock`}
+                                     style={{ background: "#fff7ed", color: "#c2410c", borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: 700 }}>
+                                     RETURNED
+                                   </span>
+                                 ) : (
+                                   <span style={{ background: "#f0fdf4", color: "#15803d", borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: 700 }}>
+                                     WITH CUSTOMER
+                                   </span>
+                                 )}
+                               </td>
+                               <td style={{ padding: "9px 10px", textAlign: "right" as const }}>
+                                 {!r.returnedAt && (
+                                   <button onClick={() => handleReturnUnit(r)} disabled={returningSerial === r.serialNo}
+                                     style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid #d1d5db", background: "#fff", color: "#374151", fontSize: 12, cursor: "pointer", opacity: returningSerial === r.serialNo ? 0.6 : 1 }}>
+                                     {returningSerial === r.serialNo ? "…" : "Mark returned"}
+                                   </button>
+                                 )}
+                               </td>
                              </tr>
                            ))}
                          </tbody>

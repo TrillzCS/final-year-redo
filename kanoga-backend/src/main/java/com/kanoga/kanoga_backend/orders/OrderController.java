@@ -14,8 +14,9 @@ public class OrderController {
         this.orderService = orderService;
     }
 
+    /** All orders, each with status and fulfilment progress. */
     @GetMapping
-    public List<OrderResponseDto> all() {
+    public List<OrderSummaryDto> all() {
         return orderService.getAllOrders();
     }
 
@@ -43,5 +44,22 @@ public class OrderController {
     @GetMapping("/{orderId}/assigned-units")
     public List<OrderAssignedUnitDto> assignedUnits(@PathVariable String orderId) {
         return orderService.listAssignedUnits(orderId);
+    }
+
+    @PatchMapping("/{orderId}/status")
+    public OrderSummaryDto updateStatus(
+            @PathVariable String orderId,
+            @RequestBody UpdateOrderStatusRequest request
+    ) {
+        return orderService.updateStatus(orderId, request);
+    }
+
+    /** Records one unit coming back from the customer. */
+    @PostMapping("/{orderId}/returns")
+    public OrderSummaryDto returnUnit(
+            @PathVariable String orderId,
+            @RequestBody ReturnUnitRequest request
+    ) {
+        return orderService.returnUnit(orderId, request);
     }
 }
