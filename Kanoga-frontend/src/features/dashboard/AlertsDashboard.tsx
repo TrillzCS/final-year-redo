@@ -87,7 +87,8 @@ export default function AlertsDashboard() {
       <div style={{ marginBottom: 20 }}>
         <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#111827" }}>Alerts Dashboard</h2>
         <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: 14 }}>
-          Expiry and stock alerts raised by the background scheduler, which checks every 60 seconds.
+          Expiry and stock alerts raised in the background. Expiry dates are checked every
+          minute, stock levels every five, and an alert clears itself once the cause is fixed.
         </p>
       </div>
 

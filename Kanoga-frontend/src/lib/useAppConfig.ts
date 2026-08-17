@@ -10,6 +10,7 @@ export type AppConfig = {
   defaultShelfLifeMonths: number;
   batchUnit: string;
   productUnit: string;
+  expiryAlertDays: number;
 };
 
 const FALLBACK: AppConfig = {
@@ -19,6 +20,7 @@ const FALLBACK: AppConfig = {
   defaultShelfLifeMonths: 18,
   batchUnit: "kg",
   productUnit: "g",
+  expiryAlertDays: 30,
 };
 
 export function useAppConfig(): AppConfig {

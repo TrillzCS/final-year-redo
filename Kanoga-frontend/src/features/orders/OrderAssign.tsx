@@ -49,9 +49,12 @@ type AssignByQrResponse = { orderId: string; labelId: string; serialNo: number; 
 type CreateOrderRequest = { orderNumber: string; customerName: string; customerEmail: string };
 type Mode = "quantity" | "scan" | "auto";
 
+// An order that predates the source column has nothing recorded, which is not the same
+// as one that was keyed in by hand.
 function storeLabel(o: Order): string {
   if (o.sourceName) return o.sourceName;
-  if (!o.source || o.source === "manual") return "Manual";
+  if (!o.source) return "Not recorded";
+  if (o.source === "manual") return "Entered manually";
   return o.source.toUpperCase();
 }
 

@@ -12,6 +12,10 @@ type Product = {
   unitOfMeasure: string | null;
   shelfLifeMonths: number | null;
   active: boolean;
+  lowStockThreshold: number | null;
+  reorderQuantity: number | null;
+  perishable: boolean | null;
+  expiryWarningDays: number | null;
 };
 
 type Supplier = {
@@ -67,9 +71,21 @@ const emptyProduct = {
   unitSize: "",
   unitOfMeasure: "",
   shelfLifeMonths: "",
+  lowStockThreshold: "",
+  reorderQuantity: "",
+  perishable: false,
+  expiryWarningDays: "",
 };
 
 const emptySupplier = { name: "", contactEmail: "", contactPhone: "", country: "" };
+
+// Blank means "not set", which is different from zero.
+function numberOrNull(value: string): number | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : null;
+}
 
 export default function Catalogue() {
   const auth = useAuth();
@@ -113,6 +129,10 @@ export default function Catalogue() {
       unitSize: p.unitSize == null ? "" : String(p.unitSize),
       unitOfMeasure: p.unitOfMeasure ?? "",
       shelfLifeMonths: p.shelfLifeMonths == null ? "" : String(p.shelfLifeMonths),
+      lowStockThreshold: p.lowStockThreshold == null ? "" : String(p.lowStockThreshold),
+      reorderQuantity: p.reorderQuantity == null ? "" : String(p.reorderQuantity),
+      perishable: !!p.perishable,
+      expiryWarningDays: p.expiryWarningDays == null ? "" : String(p.expiryWarningDays),
     });
     setSuccess(null);
     setError(null);
@@ -139,6 +159,10 @@ export default function Catalogue() {
         ? Number(productForm.shelfLifeMonths)
         : null,
       active: true,
+      lowStockThreshold: numberOrNull(productForm.lowStockThreshold),
+      reorderQuantity: numberOrNull(productForm.reorderQuantity),
+      perishable: productForm.perishable,
+      expiryWarningDays: numberOrNull(productForm.expiryWarningDays),
     };
 
     try {
@@ -172,6 +196,10 @@ export default function Catalogue() {
           unitOfMeasure: p.unitOfMeasure,
           shelfLifeMonths: p.shelfLifeMonths,
           active: !p.active,
+          lowStockThreshold: p.lowStockThreshold,
+          reorderQuantity: p.reorderQuantity,
+          perishable: p.perishable,
+          expiryWarningDays: p.expiryWarningDays,
         },
         auth
       );
@@ -301,7 +329,57 @@ export default function Catalogue() {
                   style={inputStyle}
                 />
               </Field>
+              <Field label="Reorder point (units)">
+                <input
+                  type="number"
+                  value={productForm.lowStockThreshold}
+                  onChange={(e) =>
+                    setProductForm({ ...productForm, lowStockThreshold: e.target.value })
+                  }
+                  placeholder="Leave blank for no alert"
+                  style={inputStyle}
+                />
+              </Field>
+              <Field label="Suggested reorder quantity">
+                <input
+                  type="number"
+                  value={productForm.reorderQuantity}
+                  onChange={(e) =>
+                    setProductForm({ ...productForm, reorderQuantity: e.target.value })
+                  }
+                  placeholder="200"
+                  style={inputStyle}
+                />
+              </Field>
+              <Field label={`Expiry warning days (default ${config.expiryAlertDays})`}>
+                <input
+                  type="number"
+                  value={productForm.expiryWarningDays}
+                  onChange={(e) =>
+                    setProductForm({ ...productForm, expiryWarningDays: e.target.value })
+                  }
+                  placeholder={String(config.expiryAlertDays)}
+                  style={inputStyle}
+                />
+              </Field>
+              <Field label="Perishable">
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#374151", paddingTop: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={productForm.perishable}
+                    onChange={(e) =>
+                      setProductForm({ ...productForm, perishable: e.target.checked })
+                    }
+                  />
+                  Goes off — track expiry closely
+                </label>
+              </Field>
             </div>
+
+            <p style={{ margin: "10px 0 0", fontSize: 12, color: "#6b7280" }}>
+              A reorder point is what turns low-stock alerts on for a product. Leave it blank
+              and nothing is raised no matter how far the stock falls.
+            </p>
 
             <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
               <button onClick={saveProduct} disabled={saving} style={primaryBtn(saving)}>
@@ -323,7 +401,7 @@ export default function Catalogue() {
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
                     <tr style={{ background: "#f8fafc" }}>
-                      {["Name", "SKU", "Barcode", "Size", "Shelf life", "Status", ""].map((h) => (
+                      {["Name", "SKU", "Barcode", "Size", "Shelf life", "Reorder point", "Status", ""].map((h) => (
                         <th key={h || "actions"} style={th}>{h}</th>
                       ))}
                     </tr>
@@ -343,7 +421,26 @@ export default function Catalogue() {
                             : `${p.shelfLifeMonths} mo`}
                         </td>
                         <td style={td}>
+                          {p.lowStockThreshold == null ? (
+                            <span style={{ color: "#9ca3af" }}>Not set</span>
+                          ) : (
+                            <>
+                              {p.lowStockThreshold}
+                              {p.reorderQuantity != null && (
+                                <span style={{ color: "#9ca3af", fontSize: 12 }}>
+                                  {" "}· order {p.reorderQuantity}
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </td>
+                        <td style={td}>
                           <span style={pill(p.active)}>{p.active ? "Active" : "Inactive"}</span>
+                          {p.perishable && (
+                            <span style={{ marginLeft: 6, background: "#fffbeb", color: "#b45309", border: "1px solid #fde68a", borderRadius: 999, padding: "2px 8px", fontSize: 11, fontWeight: 700 }}>
+                              Perishable
+                            </span>
+                          )}
                         </td>
                         <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
                           <button onClick={() => startEdit(p)} style={miniBtn}>Edit</button>

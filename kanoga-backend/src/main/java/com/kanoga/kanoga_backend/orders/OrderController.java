@@ -62,12 +62,13 @@ public class OrderController {
         return orderService.updateStatus(orderId, request);
     }
 
-    /** Records one unit coming back from the customer. */
+    /** Removes an order that never shipped. Dispatched orders are refused by the service. */
     @DeleteMapping("/{orderId}")
     public void delete(@PathVariable String orderId) {
         orderService.deleteOrder(orderId);
     }
 
+    /** Records one unit coming back from the customer. */
     @PostMapping("/{orderId}/returns")
     public OrderSummaryDto returnUnit(
             @PathVariable String orderId,

@@ -24,7 +24,8 @@ public class ConfigController {
                 "codePrefix", app.getBranding().getCodePrefix(),
                 "defaultShelfLifeMonths", app.getDefaults().getShelfLifeMonths(),
                 "batchUnit", app.getDefaults().getBatchUnit(),
-                "productUnit", app.getDefaults().getProductUnit()
+                "productUnit", app.getDefaults().getProductUnit(),
+                "expiryAlertDays", app.getDefaults().getExpiryAlertDays()
         );
     }
 }

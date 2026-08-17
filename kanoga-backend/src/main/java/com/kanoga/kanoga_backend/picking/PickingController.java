@@ -23,4 +23,10 @@ public class PickingController {
     public PickingDtos.PickingList build(@RequestBody List<String> orderIds) {
         return picking.build(orderIds);
     }
+
+    /** Closes out a packed run without visiting each order on the fulfilment screen. */
+    @PostMapping("/dispatch")
+    public PickingDtos.DispatchResult dispatch(@RequestBody List<String> orderIds) {
+        return picking.dispatch(orderIds);
+    }
 }

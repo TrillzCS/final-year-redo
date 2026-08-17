@@ -23,6 +23,27 @@ public class GlobalExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, ex.getMessage());
     }
 
+    /** A required query parameter was left off the request. */
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingParam(
+            org.springframework.web.bind.MissingServletRequestParameterException ex) {
+        return build(HttpStatus.BAD_REQUEST, "'" + ex.getParameterName() + "' is required");
+    }
+
+    /** A parameter was present but the wrong shape — a word where a number belongs. */
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<Map<String, Object>> handleBadParamType(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException ex) {
+        return build(HttpStatus.BAD_REQUEST, "'" + ex.getName() + "' is not in the expected format");
+    }
+
+    /** The request body was missing or could not be read as JSON. */
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<Map<String, Object>> handleUnreadableBody(
+            org.springframework.http.converter.HttpMessageNotReadableException ex) {
+        return build(HttpStatus.BAD_REQUEST, "The request body is missing or is not valid JSON");
+    }
+
     /** Webhook signature validation failed. */
     @ExceptionHandler(SecurityException.class)
     public ResponseEntity<Map<String, Object>> handleForbidden(SecurityException ex) {

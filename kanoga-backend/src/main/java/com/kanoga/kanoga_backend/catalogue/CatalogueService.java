@@ -19,23 +19,32 @@ public class CatalogueService {
         this.jdbc = jdbc;
     }
 
-    public List<ProductDto> listProducts(boolean includeInactive) {
-        String sql = """
-            select id::text as id, name, sku, barcode,
-                   unit_size, unit_of_measure, shelf_life_months, active
-            from products
-            """ + (includeInactive ? "" : " where active is true ") + " order by name asc";
+    private static final String PRODUCT_COLUMNS = """
+            id::text as id, name, sku, barcode, unit_size, unit_of_measure,
+            shelf_life_months, active, low_stock_threshold, reorder_quantity,
+            perishable, expiry_warning_days
+            """;
 
-        return jdbc.query(sql, (rs, n) -> new ProductDto(
-                rs.getString("id"),
-                rs.getString("name"),
-                rs.getString("sku"),
-                rs.getString("barcode"),
-                rs.getBigDecimal("unit_size"),
-                rs.getString("unit_of_measure"),
-                (Integer) rs.getObject("shelf_life_months"),
-                rs.getBoolean("active")
-        ));
+    private static final org.springframework.jdbc.core.RowMapper<ProductDto> PRODUCT_MAPPER = (rs, n) -> new ProductDto(
+            rs.getString("id"),
+            rs.getString("name"),
+            rs.getString("sku"),
+            rs.getString("barcode"),
+            rs.getBigDecimal("unit_size"),
+            rs.getString("unit_of_measure"),
+            (Integer) rs.getObject("shelf_life_months"),
+            rs.getBoolean("active"),
+            (Integer) rs.getObject("low_stock_threshold"),
+            (Integer) rs.getObject("reorder_quantity"),
+            (Boolean) rs.getObject("perishable"),
+            (Integer) rs.getObject("expiry_warning_days"));
+
+    public List<ProductDto> listProducts(boolean includeInactive) {
+        String sql = "select " + PRODUCT_COLUMNS + " from products "
+                + (includeInactive ? "" : " where active is true ")
+                + " order by name asc";
+
+        return jdbc.query(sql, PRODUCT_MAPPER);
     }
 
     @Transactional
@@ -50,12 +59,15 @@ public class CatalogueService {
         UUID id = UUID.randomUUID();
         jdbc.update("""
             insert into products (id, name, sku, barcode, unit_size, unit_of_measure,
-                                  shelf_life_months, active)
-            values (?, ?, ?, ?, ?, ?, ?, ?)
+                                  shelf_life_months, active, low_stock_threshold,
+                                  reorder_quantity, perishable, expiry_warning_days)
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 id, name, sku, barcode,
                 req.unitSize(), defaultUnit(req.unitOfMeasure()),
-                req.shelfLifeMonths(), req.active() == null || req.active());
+                req.shelfLifeMonths(), req.active() == null || req.active(),
+                positiveOrNull(req.lowStockThreshold()), positiveOrNull(req.reorderQuantity()),
+                req.perishable() != null && req.perishable(), positiveOrNull(req.expiryWarningDays()));
 
         return getProduct(id);
     }
@@ -75,25 +87,28 @@ public class CatalogueService {
         jdbc.update("""
             update products
             set name = ?, sku = ?, barcode = ?, unit_size = ?, unit_of_measure = ?,
-                shelf_life_months = ?, active = ?
+                shelf_life_months = ?, active = ?, low_stock_threshold = ?,
+                reorder_quantity = ?, perishable = ?, expiry_warning_days = ?
             where id = ?
             """,
                 name, sku, barcode, req.unitSize(), defaultUnit(req.unitOfMeasure()),
-                req.shelfLifeMonths(), req.active() == null || req.active(), id);
+                req.shelfLifeMonths(), req.active() == null || req.active(),
+                positiveOrNull(req.lowStockThreshold()), positiveOrNull(req.reorderQuantity()),
+                req.perishable() != null && req.perishable(), positiveOrNull(req.expiryWarningDays()),
+                id);
 
         return getProduct(id);
     }
 
     private ProductDto getProduct(UUID id) {
-        return jdbc.queryForObject("""
-            select id::text as id, name, sku, barcode,
-                   unit_size, unit_of_measure, shelf_life_months, active
-            from products where id = ?
-            """, (rs, n) -> new ProductDto(
-                rs.getString("id"), rs.getString("name"), rs.getString("sku"),
-                rs.getString("barcode"), rs.getBigDecimal("unit_size"),
-                rs.getString("unit_of_measure"),
-                (Integer) rs.getObject("shelf_life_months"), rs.getBoolean("active")), id);
+        return jdbc.queryForObject(
+                "select " + PRODUCT_COLUMNS + " from products where id = ?",
+                PRODUCT_MAPPER, id);
+    }
+
+    /** A threshold of zero is meaningful; a negative one is a typo, and blank means "not set". */
+    private Integer positiveOrNull(Integer value) {
+        return value == null || value < 0 ? null : value;
     }
 
     public ProductDto findByCode(String code) {
@@ -102,18 +117,10 @@ public class CatalogueService {
         }
         String needle = code.trim();
 
-        List<ProductDto> hits = jdbc.query("""
-            select id::text as id, name, sku, barcode,
-                   unit_size, unit_of_measure, shelf_life_months, active
-            from products
-            where barcode = ? or sku = ? or lower(name) = lower(?)
-            limit 1
-            """, (rs, n) -> new ProductDto(
-                rs.getString("id"), rs.getString("name"), rs.getString("sku"),
-                rs.getString("barcode"), rs.getBigDecimal("unit_size"),
-                rs.getString("unit_of_measure"),
-                (Integer) rs.getObject("shelf_life_months"), rs.getBoolean("active")),
-                needle, needle, needle);
+        List<ProductDto> hits = jdbc.query(
+                "select " + PRODUCT_COLUMNS + " from products"
+                        + " where barcode = ? or sku = ? or lower(name) = lower(?) limit 1",
+                PRODUCT_MAPPER, needle, needle, needle);
 
         if (hits.isEmpty()) {
             throw new IllegalArgumentException("No product matches '" + needle + "'");

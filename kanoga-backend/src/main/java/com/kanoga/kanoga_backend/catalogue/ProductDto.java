@@ -11,5 +11,9 @@ public record ProductDto(
         BigDecimal unitSize,
         String unitOfMeasure,
         Integer shelfLifeMonths,
-        boolean active
+        boolean active,
+        Integer lowStockThreshold,
+        Integer reorderQuantity,
+        Boolean perishable,
+        Integer expiryWarningDays
 ) {}

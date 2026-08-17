@@ -9,5 +9,9 @@ public record ProductUpsertRequest(
         BigDecimal unitSize,
         String unitOfMeasure,
         Integer shelfLifeMonths,
-        Boolean active
+        Boolean active,
+        Integer lowStockThreshold,
+        Integer reorderQuantity,
+        Boolean perishable,
+        Integer expiryWarningDays
 ) {}

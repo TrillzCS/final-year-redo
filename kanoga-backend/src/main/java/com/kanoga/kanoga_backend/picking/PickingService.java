@@ -14,9 +14,55 @@ import java.util.UUID;
 public class PickingService {
 
     private final JdbcTemplate jdbc;
+    private final com.kanoga.kanoga_backend.orders.OrderService orders;
 
-    public PickingService(JdbcTemplate jdbc) {
+    public PickingService(JdbcTemplate jdbc, com.kanoga.kanoga_backend.orders.OrderService orders) {
         this.jdbc = jdbc;
+        this.orders = orders;
+    }
+
+    /**
+     * Marks a packed run as gone. The status machine only allows NEW to reach DISPATCHED
+     * through PICKING, so an order still sitting on NEW is stepped through both.
+     * One order failing does not abandon the rest of the run — the reason comes back
+     * against that order so the packer can see what to fix.
+     */
+    public PickingDtos.DispatchResult dispatch(List<String> orderIds) {
+        if (orderIds == null || orderIds.isEmpty()) {
+            throw new IllegalArgumentException("Select at least one order to dispatch");
+        }
+
+        List<String> dispatched = new ArrayList<>();
+        List<PickingDtos.DispatchFailure> failures = new ArrayList<>();
+
+        for (String orderId : orderIds) {
+            String orderNo = orderNumber(orderId);
+            try {
+                if ("NEW".equals(statusOf(orderId))) {
+                    orders.updateStatus(orderId,
+                            new com.kanoga.kanoga_backend.orders.UpdateOrderStatusRequest("PICKING"));
+                }
+                orders.updateStatus(orderId,
+                        new com.kanoga.kanoga_backend.orders.UpdateOrderStatusRequest("DISPATCHED"));
+                dispatched.add(orderNo);
+            } catch (RuntimeException e) {
+                failures.add(new PickingDtos.DispatchFailure(orderNo, e.getMessage()));
+            }
+        }
+
+        return new PickingDtos.DispatchResult(dispatched.size(), dispatched, failures);
+    }
+
+    private String statusOf(String orderId) {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "select status::text as status from orders where id = ?", UUID.fromString(orderId));
+        return rows.isEmpty() ? null : String.valueOf(rows.get(0).get("status"));
+    }
+
+    private String orderNumber(String orderId) {
+        List<Map<String, Object>> rows = jdbc.queryForList(
+                "select order_no from orders where id = ?", UUID.fromString(orderId));
+        return rows.isEmpty() ? orderId : String.valueOf(rows.get(0).get("order_no"));
     }
 
     /** Orders that still need picking, oldest first. */

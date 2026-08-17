@@ -33,4 +33,12 @@ public class PickingDtos {
             String source,
             String sourceName
     ) {}
+
+    public record DispatchFailure(String orderNumber, String reason) {}
+
+    public record DispatchResult(
+            int dispatchedCount,
+            List<String> dispatched,
+            List<DispatchFailure> failures
+    ) {}
 }

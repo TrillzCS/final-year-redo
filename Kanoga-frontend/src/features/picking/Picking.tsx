@@ -33,6 +33,12 @@ type PickingList = {
   lines: PickLine[];
 };
 
+type DispatchResult = {
+  dispatchedCount: number;
+  dispatched: string[];
+  failures: { orderNumber: string; reason: string }[];
+};
+
 export default function Picking() {
   const auth = useAuth();
   const config = useAppConfig();
@@ -41,8 +47,10 @@ export default function Picking() {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [sheet, setSheet] = useState<PickingList | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [building, setBuilding] = useState(false);
+  const [dispatching, setDispatching] = useState(false);
 
   const load = useCallback(async () => {
     if (!auth) return;
@@ -89,6 +97,30 @@ export default function Picking() {
     }
   }
 
+  async function dispatchSelected() {
+    setError(null);
+    setNotice(null);
+    if (!auth) return;
+    if (selectedIds.length === 0) return setError("Select the orders you have packed.");
+    if (!window.confirm(`Mark ${selectedIds.length} order(s) as dispatched?`)) return;
+    try {
+      setDispatching(true);
+      const r = await apiPost<string[], DispatchResult>("/api/picking/dispatch", selectedIds, auth);
+      const parts = [`${r.dispatchedCount} order(s) dispatched.`];
+      if (r.failures.length > 0) {
+        parts.push(r.failures.map((f) => `${f.orderNumber}: ${f.reason}`).join(" · "));
+      }
+      setNotice(parts.join(" "));
+      setSelected({});
+      setSheet(null);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not dispatch those orders.");
+    } finally {
+      setDispatching(false);
+    }
+  }
+
   return (
     <div style={{ maxWidth: 1000 }}>
       <div className="no-print" style={{ marginBottom: 18 }}>
@@ -106,6 +138,12 @@ export default function Picking() {
         </div>
       )}
 
+      {notice && (
+        <div className="no-print" style={{ padding: "10px 14px", borderRadius: 10, background: "#f0fdf4", color: "#166534", border: "1px solid #bbf7d0", marginBottom: 14, fontSize: 13 }}>
+          {notice}
+        </div>
+      )}
+
       <div className="no-print" style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 10, flexWrap: "wrap" }}>
           <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#111827" }}>
@@ -116,6 +154,9 @@ export default function Picking() {
             <button onClick={load} style={secondaryBtn}>Refresh</button>
             <button onClick={buildSheet} disabled={building} style={primaryBtn(building)}>
               {building ? "Building…" : `Build sheet (${selectedIds.length})`}
+            </button>
+            <button onClick={dispatchSelected} disabled={dispatching} style={dispatchBtn(dispatching)}>
+              {dispatching ? "Dispatching…" : "Mark dispatched"}
             </button>
           </div>
         </div>
@@ -142,7 +183,7 @@ export default function Picking() {
                   <td style={{ ...td, fontWeight: 600, color: "#111827" }}>{o.orderNumber}</td>
                   <td style={td}>
                     <span style={{ background: "#eef2ff", color: "#4338ca", borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: 700 }}>
-                      {o.sourceName ?? (o.source && o.source !== "manual" ? o.source.toUpperCase() : "Manual")}
+                      {storeLabel(o)}
                     </span>
                   </td>
                   <td style={td}>{o.customerName ?? "—"}</td>
@@ -210,6 +251,15 @@ export default function Picking() {
   );
 }
 
+// An order that predates the source column has nothing recorded, which is not the same
+// as one that was keyed in by hand.
+function storeLabel(o: Outstanding): string {
+  if (o.sourceName) return o.sourceName;
+  if (!o.source) return "Not recorded";
+  if (o.source === "manual") return "Entered manually";
+  return o.source.toUpperCase();
+}
+
 // 1,2,3,7,8 reads better as 1-3, 7-8 on a printed sheet.
 function formatSerials(serials: number[]): string {
   if (serials.length === 0) return "—";
@@ -255,6 +305,21 @@ function primaryBtn(disabled: boolean): React.CSSProperties {
     borderRadius: 8,
     border: "none",
     background: "#4f46e5",
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: 600,
+    cursor: disabled ? "default" : "pointer",
+    opacity: disabled ? 0.7 : 1,
+    whiteSpace: "nowrap",
+  };
+}
+
+function dispatchBtn(disabled: boolean): React.CSSProperties {
+  return {
+    padding: "8px 16px",
+    borderRadius: 8,
+    border: "none",
+    background: "#0f766e",
     color: "#fff",
     fontSize: 13,
     fontWeight: 600,
