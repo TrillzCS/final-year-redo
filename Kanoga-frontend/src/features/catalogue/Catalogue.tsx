@@ -253,7 +253,7 @@ export default function Catalogue() {
                 <input
                   value={productForm.name}
                   onChange={(e) => setProductForm({ ...productForm, name: e.target.value })}
-                  placeholder="Purple Tea 100g"
+                  placeholder="Product name"
                   style={inputStyle}
                 />
               </Field>
@@ -261,7 +261,7 @@ export default function Catalogue() {
                 <input
                   value={productForm.sku}
                   onChange={(e) => setProductForm({ ...productForm, sku: e.target.value })}
-                  placeholder="PT-100G"
+                  placeholder="SKU-001"
                   style={inputStyle}
                 />
               </Field>

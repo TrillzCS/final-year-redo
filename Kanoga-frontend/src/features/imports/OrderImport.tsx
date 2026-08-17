@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiGet, apiPostRaw } from "../../lib/apiClient";
 import { useAuth } from "../auth/AuthContext";
 
-type ImportSource = { source: string; description: string };
+type ImportSource = { source: string; description: string; manualUpload: boolean };
 
 type ImportResult = {
   source: string;
@@ -14,9 +14,9 @@ type ImportResult = {
 };
 
 const CSV_TEMPLATE = `order_no,customer_name,customer_email,sku,product_name,quantity
-KAN-1001,Jane Doe,jane@example.com,PT-100G,Purple Tea 100g,2
-KAN-1001,Jane Doe,jane@example.com,PT-250G,Purple Tea 250g,1
-KAN-1002,Liam Murphy,liam@example.com,PT-100G,Purple Tea 100g,3`;
+ORD-1001,Jane Doe,jane@example.com,SKU-001,Example Product A,2
+ORD-1001,Jane Doe,jane@example.com,SKU-002,Example Product B,1
+ORD-1002,Liam Murphy,liam@example.com,SKU-001,Example Product A,3`;
 
 const JSON_TEMPLATE = `{
   "orders": [
@@ -24,7 +24,7 @@ const JSON_TEMPLATE = `{
       "orderNo": "SHOP-2001",
       "customer": { "name": "Jane Doe", "email": "jane@example.com" },
       "lines": [
-        { "sku": "PT-100G", "productName": "Purple Tea 100g", "quantity": 2 }
+        { "sku": "SKU-001", "productName": "Example Product A", "quantity": 2 }
       ]
     }
   ]
@@ -74,10 +74,8 @@ export default function OrderImport() {
     loadSources();
   }, [loadSources]);
 
-  const manualSources = useMemo(
-    () => sources.filter((s) => s.source !== "woocommerce"),
-    [sources]
-  );
+  // Webhook sources sign their payloads, so they cannot be pasted in here.
+  const manualSources = useMemo(() => sources.filter((s) => s.manualUpload), [sources]);
 
   const activeDescription = useMemo(
     () => sources.find((s) => s.source === selectedSource)?.description ?? "",

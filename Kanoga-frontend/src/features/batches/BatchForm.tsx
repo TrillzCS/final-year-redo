@@ -1,6 +1,7 @@
 import { supabase } from "../../lib/supabase";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
+import { useAppConfig } from "../../lib/useAppConfig";
 
 type Supplier = {
   id: string;
@@ -8,13 +9,13 @@ type Supplier = {
 };
 
 export function BatchForm() {
+  const config = useAppConfig();
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [supplierId, setSupplierId] = useState<string>("");
   const [newSupplierName, setNewSupplierName] = useState("");
-  const [netKg, setNetKg] = useState("5.000");
-  const [bestBefore, setBestBefore] = useState(
-    dayjs().add(18, "month").format("YYYY-MM-DD")
-  );
+  const [quantity, setQuantity] = useState("");
+  const [unit, setUnit] = useState("");
+  const [bestBefore, setBestBefore] = useState("");
   const [notes, setNotes] = useState("");
 
   const [loadingSuppliers, setLoadingSuppliers] = useState(false);
@@ -48,6 +49,13 @@ export function BatchForm() {
   useEffect(() => {
     loadSuppliers();
   }, []);
+
+  useEffect(() => {
+    if (!unit) setUnit(config.batchUnit);
+    if (!bestBefore) {
+      setBestBefore(dayjs().add(config.defaultShelfLifeMonths, "month").format("YYYY-MM-DD"));
+    }
+  }, [config, unit, bestBefore]);
 
   async function addSupplier() {
     setSuccessMessage("");
@@ -95,8 +103,8 @@ export function BatchForm() {
       return;
     }
 
-    if (!netKg.trim()) {
-      setBatchError("Please enter net kg.");
+    if (!quantity.trim()) {
+      setBatchError("Please enter the quantity received.");
       return;
     }
 
@@ -124,7 +132,9 @@ export function BatchForm() {
         supplier_id: supplierId,
         received_date: dayjs().format("YYYY-MM-DD"),
         best_before: bestBefore,
-        net_kg: netKg,
+        quantity: quantity,
+        unit: unit || config.batchUnit,
+        net_kg: unit.toLowerCase() === "kg" ? quantity : null,
         notes: notes || null,
       })
       .select()
@@ -286,16 +296,32 @@ export function BatchForm() {
         <h3 style={{ margin: 0, fontSize: 16 }}>Batch details</h3>
 
         <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontSize: 14, fontWeight: 500 }}>Net kg</span>
+          <span style={{ fontSize: 14, fontWeight: 500 }}>Quantity received</span>
+          <div style={{ display: "flex", gap: 8 }}>
           <input
-            value={netKg}
-            onChange={(e) => setNetKg(e.target.value)}
+            placeholder="e.g. 5"
+            value={quantity}
+            onChange={(e) => setQuantity(e.target.value)}
             style={{
               padding: 10,
               borderRadius: 8,
               border: "1px solid #d1d5db",
+              flex: 1,
             }}
           />
+          <input
+            value={unit}
+            onChange={(e) => setUnit(e.target.value)}
+            placeholder={config.batchUnit}
+            title="Unit of measure: kg, litres, boxes, units — whatever this stock is counted in"
+            style={{
+              padding: 10,
+              borderRadius: 8,
+              border: "1px solid #d1d5db",
+              width: 90,
+            }}
+          />
+          </div>
         </label>
 
         <label style={{ display: "grid", gap: 6 }}>

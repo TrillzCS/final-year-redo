@@ -16,12 +16,13 @@ public class OrderImportController {
         this.importService = importService;
     }
 
-    public record ImportSourceDto(String source, String description) {}
+    public record ImportSourceDto(String source, String description, boolean manualUpload) {}
 
     @GetMapping("/sources")
     public List<ImportSourceDto> sources() {
         return importService.availableAdapters().stream()
-                .map(a -> new ImportSourceDto(a.source(), a.description()))
+                .map(a -> new ImportSourceDto(a.source(), a.description(),
+                        !(a instanceof WebhookOrderAdapter)))
                 .toList();
     }
 

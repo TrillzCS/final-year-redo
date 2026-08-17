@@ -100,6 +100,7 @@ export default function OrderAssign() {
       setLoadingSubBatches(true);
       const data = await apiGet<SubBatchAvailableDto[]>("/api/sub-batches/available", auth);
       setSubBatches(data);
+      setError(null);
       if (data.length > 0 && !selectedSubBatchId) setSelectedSubBatchId(data[0].subBatchId);
     } catch { setError("Could not load inventory."); }
     finally { setLoadingSubBatches(false); }

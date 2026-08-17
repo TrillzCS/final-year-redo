@@ -98,7 +98,7 @@ public class VerificationResultDto {
         this.assigned = assigned;
     }
 
-    public Long getOrderId() {
+    public String getOrderId() {
         return orderId;
     }
 

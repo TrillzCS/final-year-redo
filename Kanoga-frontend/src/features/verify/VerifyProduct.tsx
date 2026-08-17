@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { useAppConfig } from "../../lib/useAppConfig";
 import { QrReader } from "react-qr-reader";
 import jsQR from "jsqr";
 
@@ -15,6 +16,7 @@ type VerificationResult = {
 type Mode = "manual" | "camera" | "image";
 
 export function VerifyProduct() {
+  const config = useAppConfig();
   const [mode, setMode] = useState<Mode>("manual");
   const [code, setCode] = useState("");
   const [result, setResult] = useState<VerificationResult | null>(null);
@@ -77,7 +79,7 @@ export function VerifyProduct() {
     <div style={{ maxWidth: 780 }}>
       <div style={{ marginBottom: 20 }}>
         <h2 style={{ margin: 0, fontSize: 22, fontWeight: 700, color: "#111827" }}>Verify Product</h2>
-        <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: 14 }}>Check authenticity and traceability of a Kanoga product.</p>
+        <p style={{ margin: "4px 0 0", color: "#6b7280", fontSize: 14 }}>{`Check authenticity and traceability of a ${config.companyName} product.`}</p>
       </div>
 
       {/* Mode switcher */}
