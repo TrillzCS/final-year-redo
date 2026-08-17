@@ -33,6 +33,14 @@ public class OrderController {
         return orderService.assignUnits(orderId, request);
     }
 
+    @PostMapping("/{orderId}/assign-auto")
+    public List<AssignedLabelDto> assignAuto(
+            @PathVariable String orderId,
+            @RequestBody AutoAssignRequest request
+    ) {
+        return orderService.assignAuto(orderId, request);
+    }
+
     @PostMapping("/{orderId}/assign-by-qr")
     public AssignByQrResponse assignByQr(
             @PathVariable String orderId,

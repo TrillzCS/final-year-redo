@@ -268,6 +268,7 @@ public class OrderService {
             select l.id::text as label_id, l.serial_no
             from labels l
             where l.sub_batch_id = ?
+              and l.written_off_at is null
               and not exists (
                 select 1 from assigned_units au
                 where au.sub_batch_id = l.sub_batch_id
@@ -477,6 +478,80 @@ public class OrderService {
                 rs.getString("expiry"),
                 rs.getString("returned_at")
         ), orderUUID);
+    }
+
+    /**
+     * Picks units for a product using first-expired-first-out.
+     *
+     * Choosing a sub-batch by hand means the operator decides which stock leaves, and the
+     * lowest code is usually the one they pick. For anything with an expiry that is the
+     * wrong stock: the oldest should go first or it sits on the shelf until it is dead.
+     * This allocates across sub-batches by expiry date, which is what FEFO means in practice.
+     */
+    @Transactional
+    public List<AssignedLabelDto> assignAuto(String orderId, AutoAssignRequest req) {
+        UUID orderUUID = UUID.fromString(orderId);
+        requireOrderExists(orderUUID);
+
+        if (req == null || req.productId() == null || req.quantity() == null || req.quantity() <= 0) {
+            throw new IllegalArgumentException("productId and a positive quantity are required");
+        }
+
+        requireSpareCapacity(orderUUID, req.quantity());
+
+        UUID productUUID = UUID.fromString(req.productId());
+
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+            select l.id::text          as label_id,
+                   l.serial_no         as serial_no,
+                   l.sub_batch_id::text as sub_batch_id,
+                   sb.code             as sub_batch_code,
+                   sb.expiry::text     as expiry
+            from labels l
+            join sub_batches sb on sb.id = l.sub_batch_id
+            where sb.product_id = ?
+              and l.written_off_at is null
+              and (sb.expiry is null or sb.expiry >= current_date)
+              and not exists (
+                select 1 from assigned_units au
+                where au.sub_batch_id = l.sub_batch_id
+                  and au.unit_serial_no = l.serial_no
+              )
+            order by sb.expiry asc nulls last, sb.code asc, l.serial_no asc
+            limit ?
+            for update of l
+            """, productUUID, req.quantity());
+
+        if (rows.size() < req.quantity()) {
+            throw new IllegalArgumentException(
+                    "Only " + rows.size() + " in-date unit(s) available for this product, "
+                            + req.quantity() + " requested");
+        }
+
+        UUID orderItemId = UUID.randomUUID();
+        jdbc.update("""
+            insert into order_items (id, order_id, product_id, qty_ordered)
+            values (?, ?, ?, ?)
+            """, orderItemId, orderUUID, productUUID, req.quantity());
+
+        for (Map<String, Object> row : rows) {
+            jdbc.update("""
+                insert into assigned_units (id, order_item_id, sub_batch_id, unit_serial_no)
+                values (?, ?, ?::uuid, ?)
+                """,
+                    UUID.randomUUID(), orderItemId,
+                    String.valueOf(row.get("sub_batch_id")),
+                    ((Number) row.get("serial_no")).intValue());
+        }
+
+        String oldest = String.valueOf(rows.get(0).get("expiry"));
+        activity.record("UNITS_ASSIGNED", "order", orderUUID,
+                req.quantity() + " unit(s) picked oldest-stock-first (earliest expiry " + oldest + ")");
+
+        return rows.stream().map(row -> new AssignedLabelDto(
+                String.valueOf(row.get("label_id")),
+                ((Number) row.get("serial_no")).intValue(),
+                String.valueOf(row.get("sub_batch_id")))).toList();
     }
 
     /**

@@ -29,7 +29,7 @@ public class StockService {
                    min(sb.expiry)::text as earliest_expiry
             from products p
             left join sub_batches sb on sb.product_id = p.id
-            left join labels l on l.sub_batch_id = sb.id
+            left join labels l on l.sub_batch_id = sb.id and l.written_off_at is null
             left join assigned_units au
                    on au.sub_batch_id = l.sub_batch_id
                   and au.unit_serial_no = l.serial_no

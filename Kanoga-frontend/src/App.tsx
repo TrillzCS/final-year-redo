@@ -9,6 +9,8 @@ import RecallSimulation from "./features/recall/RecallSimulation";
 import AlertsDashboard from "./features/dashboard/AlertsDashboard";
 import Dashboard from "./features/dashboard/Dashboard";
 import Stock from "./features/stock/Stock";
+import Picking from "./features/picking/Picking";
+import { SearchBar } from "./features/search/SearchBar";
 import OrderImport from "./features/imports/OrderImport";
 import Catalogue from "./features/catalogue/Catalogue";
 import Connections from "./features/connections/Connections";
@@ -16,7 +18,7 @@ import { AuthProvider } from "./features/auth/AuthContext";
 import { useAppConfig } from "./lib/useAppConfig";
 
 type LoggedInUser = { email: string; role: string; password: string };
-type View = "overview" | "stock" | "catalogue" | "receiveStock" | "packingRun" | "printLabels" | "verify" | "connections" | "importOrders" | "orderAssign" | "recall" | "alerts";
+type View = "overview" | "stock" | "catalogue" | "receiveStock" | "packingRun" | "printLabels" | "verify" | "connections" | "importOrders" | "picking" | "orderAssign" | "recall" | "alerts";
 
 const navItems: { view: View; label: string }[] = [
   { view: "overview", label: "Overview" },
@@ -29,6 +31,7 @@ const navItems: { view: View; label: string }[] = [
   { view: "connections", label: "Store Connections" },
   { view: "importOrders", label: "Import Orders" },
   { view: "orderAssign", label: "Order Fulfilment" },
+  { view: "picking", label: "Picking" },
   { view: "recall", label: "Recall Simulation" },
   { view: "alerts", label: "Alerts" },
 ];
@@ -84,7 +87,7 @@ function Shell({ user, activeView, setActiveView, lastSubBatchId, setLastSubBatc
       <div style={{ minHeight: "100vh", display: "flex", fontFamily: "system-ui, -apple-system, sans-serif", background: "#f8fafc" }}>
 
         {/* Sidebar */}
-        <aside style={{ width: 230, background: "#111827", display: "flex", flexDirection: "column", flexShrink: 0 }}>
+        <aside className="no-print" style={{ width: 230, background: "#111827", display: "flex", flexDirection: "column", flexShrink: 0 }}>
           <div style={{ padding: "20px 16px 16px", borderBottom: "1px solid #1f2937" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>{config.companyName}</div>
             <div style={{ fontSize: 16, fontWeight: 700, color: "#ffffff" }}>Admin Panel</div>
@@ -125,11 +128,12 @@ function Shell({ user, activeView, setActiveView, lastSubBatchId, setLastSubBatc
 
         {/* Main */}
         <main style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-          <header style={{ padding: "14px 24px", borderBottom: "1px solid #e5e7eb", background: "#ffffff", display: "flex", alignItems: "center", gap: 12 }}>
+          <header className="no-print" style={{ padding: "14px 24px", borderBottom: "1px solid #e5e7eb", background: "#ffffff", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
             <div>
               <div style={{ fontSize: 18, fontWeight: 700, color: "#111827" }}>{activeLabel}</div>
               <div style={{ fontSize: 12, color: "#9ca3af" }}>{config.productName}</div>
             </div>
+            <SearchBar />
           </header>
 
           <section style={{ padding: 24, flex: 1, overflowY: "auto" }}>
@@ -145,6 +149,7 @@ function Shell({ user, activeView, setActiveView, lastSubBatchId, setLastSubBatc
             {activeView === "connections" && <Connections />}
             {activeView === "importOrders" && <OrderImport />}
             {activeView === "orderAssign" && <OrderAssign />}
+            {activeView === "picking" && <Picking />}
             {activeView === "recall" && <RecallSimulation />}
             {activeView === "alerts" && <AlertsDashboard />}
           </section>

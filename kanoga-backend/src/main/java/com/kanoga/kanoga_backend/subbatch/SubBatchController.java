@@ -29,14 +29,14 @@ public class SubBatchController {
                 count(au.unit_serial_no) as assigned_units,
                 count(l.serial_no) - count(au.unit_serial_no) as available_units
             from sub_batches sb
-            join labels l on l.sub_batch_id = sb.id
+            join labels l on l.sub_batch_id = sb.id and l.written_off_at is null
             left join assigned_units au
                 on au.sub_batch_id = sb.id
                 and au.unit_serial_no = l.serial_no
             left join products p on p.id = sb.product_id
             group by sb.id, sb.code, p.id, p.name, sb.expiry
             having count(l.serial_no) - count(au.unit_serial_no) > 0
-            order by sb.code asc
+            order by sb.expiry asc nulls last, sb.code asc
             """;
 
         return jdbc.query(sql, (rs, rowNum) -> new SubBatchAvailableDto(
