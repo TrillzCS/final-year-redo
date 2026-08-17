@@ -125,7 +125,10 @@ export default function Dashboard({ onNavigate }: { onNavigate?: (view: string) 
               action={onNavigate ? { label: "View stock", onClick: () => onNavigate("stock") } : undefined}
             >
               {summary.lowStock.length === 0 ? (
-                <Empty>Every product is above its reorder point.</Empty>
+                <Empty>
+                  Nothing is below its reorder point. Products with no reorder point set on
+                  the Catalogue screen are not monitored.
+                </Empty>
               ) : (
                 summary.lowStock.map((p) => (
                   <div key={p.productId} style={rowStyle}>
