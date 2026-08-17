@@ -33,7 +33,9 @@ public class VerificationService {
             // 1) Find label by exact QR payload
             List<Map<String, Object>> labelRows = jdbc.queryForList(
                     """
-                    select id, sub_batch_id, serial_no
+                    select id, sub_batch_id, serial_no,
+                           written_off_at::text as written_off_at,
+                           write_off_reason
                     from labels
                     where qr_payload = ?
                     limit 1
@@ -64,6 +66,8 @@ public class VerificationService {
             Integer serialNo = label.get("serial_no") != null
                     ? ((Number) label.get("serial_no")).intValue()
                     : null;
+            String writtenOffAt = asString(label.get("written_off_at"));
+            String writeOffReason = asString(label.get("write_off_reason"));
 
             // 2) Load sub-batch
             String subBatchCode = null;
@@ -156,6 +160,7 @@ public class VerificationService {
             boolean assigned = false;
             String orderId = null, orderNumber = null, customerName = null;
             String customerEmail = null, assignedAt = null, returnedAt = null, dispatchedAt = null;
+            String storeName = null;
 
             if (subBatchId != null && serialNo != null) {
                 List<Map<String, Object>> assignedRows = jdbc.queryForList(
@@ -163,6 +168,8 @@ public class VerificationService {
                         select o.id::text            as order_id,
                                o.order_no            as order_no,
                                o.dispatched_at::text as dispatched_at,
+                               o.source::text        as source,
+                               sc.display_name       as source_name,
                                c.name                as customer_name,
                                c.email               as customer_email,
                                au.returned_at::text  as returned_at,
@@ -171,6 +178,7 @@ public class VerificationService {
                         join order_items oi on oi.id = au.order_item_id
                         join orders o on o.id = oi.order_id
                         left join customers c on c.id = o.customer_id
+                        left join store_connections sc on sc.id = o.source_connection_id
                         where au.sub_batch_id = ? and au.unit_serial_no = ?
                         limit 1
                         """,
@@ -187,6 +195,7 @@ public class VerificationService {
                     customerEmail = asString(row.get("customer_email"));
                     returnedAt = asString(row.get("returned_at"));
                     dispatchedAt = asString(row.get("dispatched_at"));
+                    storeName = storeLabel(asString(row.get("source_name")), asString(row.get("source")));
                 }
             }
 
@@ -215,10 +224,16 @@ public class VerificationService {
             dto.setAssignedAt(assignedAt);
             dto.setReturnedAt(returnedAt);
             dto.setDispatchedAt(dispatchedAt);
+            dto.setStoreName(storeName);
+            dto.setWrittenOffAt(writtenOffAt);
+            dto.setWriteOffReason(writeOffReason);
             dto.setHistory(buildHistory(subBatchCode, serialNo, batchCode, supplierName,
-                    effectiveBestBefore, orderNumber, customerName, dispatchedAt, returnedAt));
+                    effectiveBestBefore, orderNumber, customerName, storeName,
+                    dispatchedAt, returnedAt, writtenOffAt, writeOffReason));
 
-            if (returnedAt != null) {
+            if (writtenOffAt != null) {
+                dto.setMessage("Written off" + (writeOffReason == null ? "" : ": " + writeOffReason));
+            } else if (returnedAt != null) {
                 dto.setMessage("Returned by the customer and quarantined.");
             } else if (assigned) {
                 dto.setMessage("Verified. This unit was sent to " + (customerName == null ? "a customer" : customerName) + ".");
@@ -263,10 +278,17 @@ public class VerificationService {
         return LocalDate.parse(value.toString());
     }
 
+    // Falls back to the raw source when a connection was deleted or the order was keyed in by hand.
+    private String storeLabel(String sourceName, String source) {
+        if (sourceName != null && !sourceName.isBlank()) return sourceName;
+        if (source == null || source.isBlank() || source.equals("manual")) return "Entered manually";
+        return source.toUpperCase();
+    }
+
     private List<VerificationResultDto.HistoryEntry> buildHistory(
             String subBatchCode, Integer serialNo, String batchCode, String supplierName,
-            LocalDate bestBefore, String orderNumber, String customerName,
-            String dispatchedAt, String returnedAt) {
+            LocalDate bestBefore, String orderNumber, String customerName, String storeName,
+            String dispatchedAt, String returnedAt, String writtenOffAt, String writeOffReason) {
 
         List<VerificationResultDto.HistoryEntry> history = new java.util.ArrayList<>();
 
@@ -284,7 +306,9 @@ public class VerificationService {
         if (orderNumber != null) {
             history.add(new VerificationResultDto.HistoryEntry(
                     null, "Picked for order",
-                    orderNumber + (customerName == null ? "" : " - " + customerName)));
+                    orderNumber
+                            + (customerName == null ? "" : " - " + customerName)
+                            + (storeName == null ? "" : " (" + storeName + ")")));
         }
         if (dispatchedAt != null) {
             history.add(new VerificationResultDto.HistoryEntry(
@@ -293,6 +317,11 @@ public class VerificationService {
         if (returnedAt != null) {
             history.add(new VerificationResultDto.HistoryEntry(
                     returnedAt, "Returned", "Quarantined, not returned to sellable stock"));
+        }
+        if (writtenOffAt != null) {
+            history.add(new VerificationResultDto.HistoryEntry(
+                    writtenOffAt, "Written off",
+                    writeOffReason == null ? "Removed from sellable stock" : writeOffReason));
         }
         return history;
     }

@@ -5,12 +5,17 @@ import jsQR from "jsqr";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8081";
 
+type HistoryEntry = { when: string | null; event: string; detail: string | null };
+
 type VerificationResult = {
   valid: boolean; message: string; productName: string | null;
   subBatchCode: string | null; batchCode: string | null; supplierName: string | null;
   bestBefore: string | null; expired: boolean; assigned?: boolean;
-  orderId?: number | null; orderNumber?: string | null;
+  orderId?: string | null; orderNumber?: string | null;
   customerName?: string | null; customerEmail?: string | null; assignedAt?: string | null;
+  dispatchedAt?: string | null; returnedAt?: string | null; storeName?: string | null;
+  writtenOffAt?: string | null; writeOffReason?: string | null;
+  history?: HistoryEntry[];
 };
 
 type Mode = "manual" | "camera" | "image";
@@ -42,6 +47,8 @@ export function VerifyProduct() {
   const status = (() => {
     if (!result) return null;
     if (!result.valid) return { label: "Invalid", bg: "#fef2f2", color: "#b91c1c", dot: "#ef4444" };
+    if (result.writtenOffAt) return { label: "Written off", bg: "#fef2f2", color: "#b91c1c", dot: "#ef4444" };
+    if (result.returnedAt) return { label: "Returned", bg: "#fefce8", color: "#92400e", dot: "#f59e0b" };
     if (result.expired) return { label: "Expired", bg: "#fefce8", color: "#92400e", dot: "#f59e0b" };
     return { label: "Verified", bg: "#f0fdf4", color: "#166534", dot: "#22c55e" };
   })();
@@ -162,9 +169,10 @@ export function VerifyProduct() {
               { label: "Best before", value: result.bestBefore },
               { label: "Assigned", value: result.assigned ? "Yes" : "No" },
               { label: "Order number", value: result.orderNumber ?? null },
+              { label: "Store", value: result.storeName ?? null },
               { label: "Customer", value: result.customerName ?? null },
               { label: "Customer email", value: result.customerEmail ?? null },
-              { label: "Assigned at", value: result.assignedAt ?? null },
+              { label: "Dispatched", value: formatWhen(result.dispatchedAt) },
             ].map(({ label, value }) => (
               <div key={label} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: "10px 14px", background: "#fafafa" }}>
                 <div style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{label}</div>
@@ -172,8 +180,38 @@ export function VerifyProduct() {
               </div>
             ))}
           </div>
+
+          {result.history && result.history.length > 0 && (
+            <div style={{ marginTop: 22, borderTop: "1px solid #e5e7eb", paddingTop: 18 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#111827", marginBottom: 14 }}>History</div>
+              <div>
+                {result.history.map((h, i) => {
+                  const last = i === result.history!.length - 1;
+                  return (
+                    <div key={i} style={{ display: "flex", gap: 12 }}>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: 12 }}>
+                        <div style={{ width: 9, height: 9, borderRadius: "50%", background: last ? "#4f46e5" : "#cbd5e1", marginTop: 5, flexShrink: 0 }} />
+                        {!last && <div style={{ width: 2, flex: 1, background: "#e5e7eb", minHeight: 22 }} />}
+                      </div>
+                      <div style={{ paddingBottom: last ? 0 : 16 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: "#111827" }}>{h.event}</div>
+                        {h.detail && <div style={{ fontSize: 12, color: "#6b7280", marginTop: 2 }}>{h.detail}</div>}
+                        {h.when && <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{formatWhen(h.when)}</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
+}
+
+function formatWhen(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const d = new Date(value.replace(" ", "T"));
+  return isNaN(d.getTime()) ? value : d.toLocaleString();
 }

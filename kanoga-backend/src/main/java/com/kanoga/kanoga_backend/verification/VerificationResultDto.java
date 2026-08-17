@@ -22,6 +22,9 @@ public class VerificationResultDto {
     private String assignedAt;
     private String returnedAt;
     private String dispatchedAt;
+    private String storeName;
+    private String writtenOffAt;
+    private String writeOffReason;
     private java.util.List<HistoryEntry> history = new java.util.ArrayList<>();
 
     public record HistoryEntry(String when, String event, String detail) {}
@@ -152,6 +155,30 @@ public class VerificationResultDto {
 
     public void setDispatchedAt(String dispatchedAt) {
         this.dispatchedAt = dispatchedAt;
+    }
+
+    public String getStoreName() {
+        return storeName;
+    }
+
+    public void setStoreName(String storeName) {
+        this.storeName = storeName;
+    }
+
+    public String getWrittenOffAt() {
+        return writtenOffAt;
+    }
+
+    public void setWrittenOffAt(String writtenOffAt) {
+        this.writtenOffAt = writtenOffAt;
+    }
+
+    public String getWriteOffReason() {
+        return writeOffReason;
+    }
+
+    public void setWriteOffReason(String writeOffReason) {
+        this.writeOffReason = writeOffReason;
     }
 
     public java.util.List<HistoryEntry> getHistory() {

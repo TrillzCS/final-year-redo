@@ -55,6 +55,12 @@ public class OrderImportService {
     /** Persists already-parsed orders. */
     @Transactional
     public ImportResultDto persist(String source, List<InboundOrder> orders) {
+        return persist(source, orders, null);
+    }
+
+    /** @param connectionId the store connection this batch arrived through, if any */
+    @Transactional
+    public ImportResultDto persist(String source, List<InboundOrder> orders, UUID connectionId) {
         List<String> imported = new ArrayList<>();
         List<String> skipped = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
@@ -64,7 +70,7 @@ public class OrderImportService {
                 skipped.add(order.orderNo());
                 continue;
             }
-            writeOrder(order, warnings);
+            writeOrder(order, source, connectionId, warnings);
             imported.add(order.orderNo());
         }
 
@@ -80,20 +86,23 @@ public class OrderImportService {
                 "select id from orders where order_no = ? limit 1", orderNo).isEmpty();
     }
 
-    private void writeOrder(InboundOrder order, List<String> warnings) {
+    private void writeOrder(InboundOrder order, String source, UUID connectionId, List<String> warnings) {
         UUID customerId = findOrCreateCustomer(order.customer());
         UUID orderId = UUID.randomUUID();
 
         if (order.status() != null && !order.status().isBlank()) {
             jdbc.update("""
-                insert into orders (id, order_no, customer_id, status, placed_at, created_at)
-                values (?, ?, ?, ?::order_status, coalesce(?, now()), now())
-                """, orderId, order.orderNo(), customerId, order.status(), order.placedAt());
+                insert into orders (id, order_no, customer_id, status, placed_at, created_at,
+                                    source, source_connection_id)
+                values (?, ?, ?, ?::order_status, coalesce(?, now()), now(), ?, ?)
+                """, orderId, order.orderNo(), customerId, order.status(), order.placedAt(),
+                    source, connectionId);
         } else {
             jdbc.update("""
-                insert into orders (id, order_no, customer_id, placed_at, created_at)
-                values (?, ?, ?, coalesce(?, now()), now())
-                """, orderId, order.orderNo(), customerId, order.placedAt());
+                insert into orders (id, order_no, customer_id, placed_at, created_at,
+                                    source, source_connection_id)
+                values (?, ?, ?, coalesce(?, now()), now(), ?, ?)
+                """, orderId, order.orderNo(), customerId, order.placedAt(), source, connectionId);
         }
 
         for (InboundLine line : order.lines()) {

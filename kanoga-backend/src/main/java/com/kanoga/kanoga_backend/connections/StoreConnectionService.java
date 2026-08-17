@@ -138,7 +138,7 @@ public class StoreConnectionService {
         }
 
         List<InboundOrder> orders = adapter.parse(rawBody);
-        ImportResultDto result = importService.persist(adapter.source(), orders);
+        ImportResultDto result = importService.persist(adapter.source(), orders, id);
 
         jdbc.update("""
             update store_connections

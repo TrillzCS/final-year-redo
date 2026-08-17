@@ -25,6 +25,8 @@ public class PickingService {
             select o.id::text as order_id,
                    o.order_no,
                    o.status::text as status,
+                   o.source as source,
+                   sc.display_name as source_name,
                    c.name as customer_name,
                    coalesce((select sum(oi.qty_ordered) from order_items oi
                              where oi.order_id = o.id), 0) as qty_ordered,
@@ -33,6 +35,7 @@ public class PickingService {
                              where oi2.order_id = o.id and au.returned_at is null), 0) as qty_picked
             from orders o
             left join customers c on c.id = o.customer_id
+            left join store_connections sc on sc.id = o.source_connection_id
             where o.status::text in ('NEW', 'PICKING')
             order by o.created_at asc
             """, (rs, n) -> new PickingDtos.OutstandingOrder(
@@ -41,7 +44,9 @@ public class PickingService {
                     rs.getString("customer_name"),
                     rs.getString("status"),
                     rs.getLong("qty_ordered"),
-                    rs.getLong("qty_picked")));
+                    rs.getLong("qty_picked"),
+                    rs.getString("source"),
+                    rs.getString("source_name")));
     }
 
     /**

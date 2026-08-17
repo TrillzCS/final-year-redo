@@ -12,5 +12,7 @@ public record OrderSummaryDto(
         long qtyReturned,
         String fulfilment,
         String placedAt,
-        String dispatchedAt
+        String dispatchedAt,
+        String source,
+        String sourceName
 ) {}

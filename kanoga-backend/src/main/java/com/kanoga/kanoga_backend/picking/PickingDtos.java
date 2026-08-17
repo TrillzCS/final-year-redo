@@ -29,6 +29,8 @@ public class PickingDtos {
             String customerName,
             String status,
             long qtyOrdered,
-            long qtyPicked
+            long qtyPicked,
+            String source,
+            String sourceName
     ) {}
 }

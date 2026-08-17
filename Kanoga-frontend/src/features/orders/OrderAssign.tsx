@@ -14,6 +14,8 @@ type Order = {
   fulfilment: "MANUAL" | "MANUAL_PICKED" | "UNFULFILLED" | "PARTIAL" | "FULFILLED";
   placedAt?: string | null;
   dispatchedAt?: string | null;
+  source?: string | null;
+  sourceName?: string | null;
 };
 type OrderStatus = "NEW" | "PICKING" | "DISPATCHED" | "RETURNED" | "CANCELLED";
 
@@ -42,10 +44,16 @@ const FULFILMENT_LABEL: Record<Order["fulfilment"], string> = {
 };
 type AssignedLabelDto = { labelId: string; serialNo: number; subBatchId: string };
 type OrderAssignedUnitDto = { serialNo: number; subBatchId: string; subBatchCode: string; productName: string | null; expiry: string | null; returnedAt: string | null };
-type SubBatchAvailableDto = { subBatchId: string; subBatchCode: string; productName: string | null; bestBefore: string | null; totalUnits: number; assignedUnits: number; availableUnits: number };
+type SubBatchAvailableDto = { subBatchId: string; subBatchCode: string; productId: string | null; productName: string | null; bestBefore: string | null; totalUnits: number; assignedUnits: number; availableUnits: number };
 type AssignByQrResponse = { orderId: string; labelId: string; serialNo: number; subBatchId: string; assignedAt: string };
 type CreateOrderRequest = { orderNumber: string; customerName: string; customerEmail: string };
-type Mode = "quantity" | "scan";
+type Mode = "quantity" | "scan" | "auto";
+
+function storeLabel(o: Order): string {
+  if (o.sourceName) return o.sourceName;
+  if (!o.source || o.source === "manual") return "Manual";
+  return o.source.toUpperCase();
+}
 
 const inputStyle = { width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box" as const };
 const labelStyle = { fontSize: 12, fontWeight: 600 as const, color: "#374151", display: "block" as const, marginBottom: 5 };
@@ -58,6 +66,9 @@ export default function OrderAssign() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [selectedSubBatchId, setSelectedSubBatchId] = useState<string | null>(null);
   const [quantity, setQuantity] = useState("1");
+  const [autoProductId, setAutoProductId] = useState<string>("");
+  const [autoQuantity, setAutoQuantity] = useState("1");
+  const [deleting, setDeleting] = useState(false);
   const [qrPayload, setQrPayload] = useState("");
   const [newOrderNumber, setNewOrderNumber] = useState("");
   const [newCustomerName, setNewCustomerName] = useState("");
@@ -76,6 +87,14 @@ export default function OrderAssign() {
   const [returningSerial, setReturningSerial] = useState<number | null>(null);
 
   const selectedOrder = useMemo(() => orders.find((o) => o.id === selectedOrderId) ?? null, [orders, selectedOrderId]);
+  const products = useMemo(() => {
+    const map = new Map<string, string>();
+    subBatches.forEach((s) => {
+      if (s.productId && s.productName) map.set(s.productId, s.productName);
+    });
+    return [...map.entries()].map(([id, name]) => ({ id, name }));
+  }, [subBatches]);
+
   const selectedSubBatch = useMemo(() => subBatches.find((s) => s.subBatchId === selectedSubBatchId) ?? null, [selectedSubBatchId, subBatches]);
 
   async function loadOrders() {
@@ -161,6 +180,49 @@ export default function OrderAssign() {
     finally { setReturningSerial(null); }
   }
 
+  async function handleAssignAuto() {
+    setError(null); setSuccess(null); setAssignedNow(null); setLastScan(null);
+    if (!auth) return setError("Not authenticated.");
+    if (!selectedOrderId) return setError("Select an order first.");
+    const qty = parseInt(autoQuantity, 10);
+    if (!autoProductId || isNaN(qty) || qty <= 0) return setError("Pick a product and a valid quantity.");
+    try {
+      setLoadingAssign(true);
+      const data = await apiPost<{ productId: string; quantity: number }, AssignedLabelDto[]>(
+        `/api/orders/${selectedOrderId}/assign-auto`,
+        { productId: autoProductId, quantity: qty },
+        auth
+      );
+      setAssignedNow(data);
+      setSuccess(`${data.length} unit(s) picked, oldest stock first.`);
+      await Promise.all([refreshAssigned(selectedOrderId), refreshSubBatches(), loadOrders()]);
+    } catch (e: any) { setError(e.message || "Assignment failed."); }
+    finally { setLoadingAssign(false); }
+  }
+
+  async function handleDeleteOrder() {
+    setError(null); setSuccess(null);
+    if (!auth || !selectedOrderId) return;
+    const order = orders.find((o) => o.id === selectedOrderId);
+    if (!window.confirm(`Delete order ${order?.orderNumber ?? ""}? Only possible while nothing is picked.`)) return;
+    try {
+      setDeleting(true);
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || "http://localhost:8081"}/api/orders/${selectedOrderId}`, {
+        method: "DELETE",
+        headers: { Authorization: "Basic " + btoa(`${auth.email}:${auth.password}`) },
+      });
+      if (!res.ok) {
+        let msg = `Delete failed with ${res.status}`;
+        try { const body = await res.json(); if (body?.message) msg = body.message; } catch { /* no body */ }
+        throw new Error(msg);
+      }
+      setSuccess("Order deleted.");
+      setSelectedOrderId(null);
+      await loadOrders();
+    } catch (e: any) { setError(e.message || "Could not delete the order."); }
+    finally { setDeleting(false); }
+  }
+
   async function handleAssignByQuantity() {
     setError(null); setSuccess(null); setAssignedNow(null); setLastScan(null);
     if (!auth) return setError("Not authenticated.");
@@ -220,14 +282,14 @@ export default function OrderAssign() {
           <label style={labelStyle}>Order {loadingOrders ? "(loading…)" : ""}</label>
           <select value={selectedOrderId ?? ""} onChange={(e) => setSelectedOrderId(e.target.value || null)} style={{ ...inputStyle, background: "#fff" }}>
             <option value="">Select an order…</option>
-            {orders.map((o) => <option key={o.id} value={o.id}>{o.orderNumber || `Order #${o.id}`}{o.customerName ? ` — ${o.customerName}` : ""} [{o.status}{o.qtyOrdered > 0 ? ` ${o.qtyAssigned}/${o.qtyOrdered}` : ""}]</option>)}
+            {orders.map((o) => <option key={o.id} value={o.id}>{o.orderNumber || `Order #${o.id}`}{o.customerName ? ` — ${o.customerName}` : ""} · {storeLabel(o)} [{o.status}{o.qtyOrdered > 0 ? ` ${o.qtyAssigned}/${o.qtyOrdered}` : ""}]</option>)}
           </select>
         </div>
         <div style={{ display: "inline-flex", borderRadius: 8, background: "#f1f5f9", padding: 3, gap: 2 }}>
-          {(["scan", "quantity"] as Mode[]).map((m) => (
+          {(["scan", "quantity", "auto"] as Mode[]).map((m) => (
             <button key={m} onClick={() => setMode(m)}
               style={{ padding: "7px 14px", borderRadius: 6, border: "none", cursor: "pointer", fontSize: 13, fontWeight: mode === m ? 600 : 400, background: mode === m ? "#ffffff" : "transparent", color: mode === m ? "#111827" : "#6b7280", boxShadow: mode === m ? "0 1px 3px rgba(0,0,0,0.08)" : "none" }}>
-              {m === "scan" ? " Scan" : " Quantity"}
+              {m === "scan" ? "Scan" : m === "quantity" ? "Sub-batch" : "Oldest first"}
             </button>
           ))}
         </div>
@@ -239,6 +301,9 @@ export default function OrderAssign() {
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
             <span style={{ background: STATUS_STYLE[selectedOrder.status].bg, color: STATUS_STYLE[selectedOrder.status].fg, borderRadius: 999, padding: "4px 12px", fontSize: 12, fontWeight: 700, letterSpacing: 0.4 }}>
               {selectedOrder.status}
+            </span>
+            <span title="Where this order came from" style={{ background: "#eef2ff", color: "#4338ca", borderRadius: 999, padding: "4px 12px", fontSize: 12, fontWeight: 700 }}>
+              {storeLabel(selectedOrder)}
             </span>
             <span style={{ fontSize: 13, color: "#374151" }}>
               {FULFILMENT_LABEL[selectedOrder.fulfilment]}
@@ -266,6 +331,13 @@ export default function OrderAssign() {
           )}
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            {(selectedOrder.status === "NEW" || selectedOrder.status === "CANCELLED") &&
+              selectedOrder.qtyAssigned === 0 && (
+                <button onClick={handleDeleteOrder} disabled={deleting}
+                  style={{ padding: "6px 14px", borderRadius: 999, fontSize: 12, fontWeight: 600, cursor: "pointer", border: "1px solid #fecaca", background: "#fef2f2", color: "#b91c1c", marginRight: 8, opacity: deleting ? 0.6 : 1 }}>
+                  {deleting ? "Deleting…" : "Delete order"}
+                </button>
+              )}
             {NEXT_STATES[selectedOrder.status].length === 0 ? (
               <span style={{ fontSize: 12, color: "#9ca3af" }}>
                 {selectedOrder.status} is a final status — no further changes possible.
@@ -298,7 +370,31 @@ export default function OrderAssign() {
 
       {/* Assign panel */}
       <div style={{ background: "#ffffff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 20, marginBottom: 14 }}>
-        {mode === "scan" ? (
+        {mode === "auto" ? (
+          <>
+            <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>
+              Pick by product and let the system choose the stock: it takes the earliest
+              expiry date first and skips anything already out of date.
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 140px", gap: 12 }}>
+              <div>
+                <label style={labelStyle}>Product</label>
+                <select value={autoProductId} onChange={(e) => setAutoProductId(e.target.value)} style={{ ...inputStyle, background: "#fff" }}>
+                  <option value="">Select a product…</option>
+                  {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Quantity</label>
+                <input type="number" min={1} value={autoQuantity} onChange={(e) => setAutoQuantity(e.target.value)} style={inputStyle} />
+              </div>
+            </div>
+            <button onClick={handleAssignAuto} disabled={loadingAssign}
+              style={{ marginTop: 12, padding: "9px 18px", borderRadius: 8, border: "none", background: "#4f46e5", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", opacity: loadingAssign ? 0.7 : 1 }}>
+              {loadingAssign ? "Picking…" : "Pick oldest stock"}
+            </button>
+          </>
+        ) : mode === "scan" ? (
           <>
             <label style={labelStyle}>QR Payload</label>
             <textarea value={qrPayload} onChange={(e) => setQrPayload(e.target.value)} placeholder='{"sub":"SUB123","s":1}' rows={3}

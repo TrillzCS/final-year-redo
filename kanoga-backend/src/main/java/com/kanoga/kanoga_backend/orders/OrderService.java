@@ -39,6 +39,8 @@ public class OrderService {
                 o.status::text        as status,
                 o.placed_at::text     as placed_at,
                 o.dispatched_at::text as dispatched_at,
+                o.source              as source,
+                sc.display_name       as source_name,
                 c.name                as customer_name,
                 c.email               as customer_email,
                 coalesce((
@@ -57,6 +59,7 @@ public class OrderService {
                 ), 0) as qty_returned
             from orders o
             left join customers c on c.id = o.customer_id
+            left join store_connections sc on sc.id = o.source_connection_id
             order by o.created_at desc
             """;
 
@@ -75,7 +78,9 @@ public class OrderService {
                     returned,
                     fulfilmentState(ordered, assigned),
                     rs.getString("placed_at"),
-                    rs.getString("dispatched_at")
+                    rs.getString("dispatched_at"),
+                    rs.getString("source"),
+                    rs.getString("source_name")
             );
         });
     }
@@ -234,7 +239,7 @@ public class OrderService {
 
         UUID orderId = UUID.randomUUID();
         jdbc.update(
-                "insert into orders (id, order_no, customer_id) values (?, ?, ?)",
+                "insert into orders (id, order_no, customer_id, source) values (?, ?, ?, 'manual')",
                 orderId,
                 orderNo,
                 customerId

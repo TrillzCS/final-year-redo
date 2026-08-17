@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { apiGet } from "../../lib/apiClient";
+import { apiGet, apiPost } from "../../lib/apiClient";
 import { useAuth } from "../auth/AuthContext";
 
 type ProductStock = {
@@ -16,6 +16,14 @@ type ProductStock = {
   earliestExpiry: string | null;
 };
 
+type WrittenOff = {
+  subBatchCode: string;
+  productName: string | null;
+  serialNo: number;
+  writtenOffAt: string | null;
+  reason: string | null;
+};
+
 type BatchStock = {
   subBatchId: string;
   subBatchCode: string;
@@ -29,13 +37,19 @@ type BatchStock = {
   expired: boolean;
 };
 
-type Tab = "products" | "batches";
+type Tab = "products" | "batches" | "writeOffs";
 
 export default function Stock() {
   const auth = useAuth();
   const [tab, setTab] = useState<Tab>("products");
   const [products, setProducts] = useState<ProductStock[]>([]);
   const [batches, setBatches] = useState<BatchStock[]>([]);
+  const [writeOffs, setWriteOffs] = useState<WrittenOff[]>([]);
+  const [woSubBatch, setWoSubBatch] = useState("");
+  const [woQuantity, setWoQuantity] = useState("1");
+  const [woReason, setWoReason] = useState("");
+  const [woSaving, setWoSaving] = useState(false);
+  const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -44,12 +58,15 @@ export default function Stock() {
     setLoading(true);
     setError(null);
     try {
-      const [p, b] = await Promise.all([
+      const [p, b, w] = await Promise.all([
         apiGet<ProductStock[]>("/api/stock/products", auth),
         apiGet<BatchStock[]>("/api/stock/batches", auth),
+        apiGet<WrittenOff[]>("/api/stock/write-offs?limit=50", auth),
       ]);
       setProducts(p);
       setBatches(b);
+      setWriteOffs(w);
+      setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not load stock.");
     } finally {
@@ -62,6 +79,32 @@ export default function Stock() {
   }, [load]);
 
   const totalAvailable = products.reduce((sum, p) => sum + p.availableUnits, 0);
+
+  async function submitWriteOff() {
+    setError(null);
+    setSuccess(null);
+    if (!auth) return;
+    if (!woSubBatch) return setError("Choose a sub-batch.");
+    if (!woReason.trim()) return setError("Give a reason — write-offs are audited.");
+    const qty = parseInt(woQuantity, 10);
+    if (isNaN(qty) || qty <= 0) return setError("Enter a quantity of at least one.");
+    try {
+      setWoSaving(true);
+      const res = await apiPost<Record<string, unknown>, { unitsWrittenOff: number }>(
+        "/api/stock/write-off",
+        { subBatchId: woSubBatch, quantity: qty, reason: woReason.trim() },
+        auth
+      );
+      setSuccess(`${res.unitsWrittenOff} unit(s) written off.`);
+      setWoQuantity("1");
+      setWoReason("");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not write off that stock.");
+    } finally {
+      setWoSaving(false);
+    }
+  }
 
   return (
     <div style={{ maxWidth: 1040 }}>
@@ -79,7 +122,7 @@ export default function Stock() {
       </div>
 
       <div style={{ display: "inline-flex", borderRadius: 8, background: "#f1f5f9", padding: 3, gap: 2, marginBottom: 14 }}>
-        {(["products", "batches"] as Tab[]).map((t) => (
+        {(["products", "batches", "writeOffs"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -95,7 +138,7 @@ export default function Stock() {
               boxShadow: tab === t ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
             }}
           >
-            {t === "products" ? "By product" : "By batch"}
+            {t === "products" ? "By product" : t === "batches" ? "By batch" : "Write-offs"}
           </button>
         ))}
       </div>
@@ -105,9 +148,77 @@ export default function Stock() {
           {error}
         </div>
       )}
+      {success && (
+        <div style={{ padding: "10px 14px", borderRadius: 10, background: "#ecfdf5", color: "#065f46", border: "1px solid #a7f3d0", marginBottom: 14, fontSize: 13 }}>
+          {success}
+        </div>
+      )}
+
+      {tab === "writeOffs" && (
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, marginBottom: 16 }}>
+          <h3 style={{ margin: "0 0 4px", fontSize: 14, fontWeight: 600, color: "#111827" }}>Write stock off</h3>
+          <p style={{ margin: "0 0 12px", fontSize: 13, color: "#6b7280" }}>
+            Damaged, used as a sample, or miscounted. Units leave available stock without
+            being attached to an order, and the reason is recorded.
+          </p>
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 100px 2fr auto", gap: 10, alignItems: "end" }}>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>Sub-batch</label>
+              <select value={woSubBatch} onChange={(e) => setWoSubBatch(e.target.value)}
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13, background: "#fff", boxSizing: "border-box" }}>
+                <option value="">Select…</option>
+                {batches.filter((b) => b.availableUnits > 0).map((b) => (
+                  <option key={b.subBatchId} value={b.subBatchId}>
+                    {b.subBatchCode} — {b.availableUnits} available
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>Qty</label>
+              <input type="number" min={1} value={woQuantity} onChange={(e) => setWoQuantity(e.target.value)}
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box" }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#374151", display: "block", marginBottom: 4 }}>Reason</label>
+              <input value={woReason} onChange={(e) => setWoReason(e.target.value)} placeholder="Damaged in transit"
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #d1d5db", fontSize: 13, boxSizing: "border-box" }} />
+            </div>
+            <button onClick={submitWriteOff} disabled={woSaving}
+              style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: "#b91c1c", color: "#fff", fontSize: 13, fontWeight: 600, cursor: woSaving ? "default" : "pointer", opacity: woSaving ? 0.7 : 1, whiteSpace: "nowrap" }}>
+              {woSaving ? "Saving…" : "Write off"}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 16, overflowX: "auto" }}>
-        {tab === "products" ? (
+        {tab === "writeOffs" ? (
+          writeOffs.length === 0 ? (
+            <Empty>Nothing has been written off.</Empty>
+          ) : (
+            <table style={tableStyle}>
+              <thead>
+                <tr style={{ background: "#f8fafc" }}>
+                  {["Sub-batch", "Product", "Serial", "When", "Reason"].map((h) => (
+                    <th key={h} style={th}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {writeOffs.map((w, i) => (
+                  <tr key={i}>
+                    <td style={{ ...td, fontFamily: "monospace", fontSize: 12 }}>{w.subBatchCode}</td>
+                    <td style={td}>{w.productName ?? "—"}</td>
+                    <td style={td}>#{w.serialNo}</td>
+                    <td style={td}>{w.writtenOffAt ? new Date(w.writtenOffAt).toLocaleString() : "—"}</td>
+                    <td style={{ ...td, whiteSpace: "normal" }}>{w.reason ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )
+        ) : tab === "products" ? (
           products.length === 0 ? (
             <Empty>No products yet. Add them under Catalogue.</Empty>
           ) : (

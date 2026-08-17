@@ -10,6 +10,8 @@ type Outstanding = {
   status: string;
   qtyOrdered: number;
   qtyPicked: number;
+  source: string | null;
+  sourceName: string | null;
 };
 
 type PickLine = {
@@ -126,7 +128,7 @@ export default function Picking() {
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
             <thead>
               <tr style={{ background: "#f8fafc" }}>
-                {["", "Order", "Customer", "Status", "Picked"].map((h, i) => (
+                {["", "Order", "Store", "Customer", "Status", "Picked"].map((h, i) => (
                   <th key={i} style={th}>{h}</th>
                 ))}
               </tr>
@@ -138,6 +140,11 @@ export default function Picking() {
                     <input type="checkbox" checked={!!selected[o.orderId]} onChange={() => toggle(o.orderId)} />
                   </td>
                   <td style={{ ...td, fontWeight: 600, color: "#111827" }}>{o.orderNumber}</td>
+                  <td style={td}>
+                    <span style={{ background: "#eef2ff", color: "#4338ca", borderRadius: 999, padding: "2px 9px", fontSize: 11, fontWeight: 700 }}>
+                      {o.sourceName ?? (o.source && o.source !== "manual" ? o.source.toUpperCase() : "Manual")}
+                    </span>
+                  </td>
                   <td style={td}>{o.customerName ?? "—"}</td>
                   <td style={td}>{o.status}</td>
                   <td style={td}>
