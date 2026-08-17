@@ -7,6 +7,8 @@ import { VerifyProduct } from "./features/verify/VerifyProduct";
 import OrderAssign from "./features/orders/OrderAssign";
 import RecallSimulation from "./features/recall/RecallSimulation";
 import AlertsDashboard from "./features/dashboard/AlertsDashboard";
+import Dashboard from "./features/dashboard/Dashboard";
+import Stock from "./features/stock/Stock";
 import OrderImport from "./features/imports/OrderImport";
 import Catalogue from "./features/catalogue/Catalogue";
 import Connections from "./features/connections/Connections";
@@ -14,9 +16,11 @@ import { AuthProvider } from "./features/auth/AuthContext";
 import { useAppConfig } from "./lib/useAppConfig";
 
 type LoggedInUser = { email: string; role: string; password: string };
-type View = "catalogue" | "receiveStock" | "packingRun" | "printLabels" | "verify" | "connections" | "importOrders" | "orderAssign" | "recall" | "alerts";
+type View = "overview" | "stock" | "catalogue" | "receiveStock" | "packingRun" | "printLabels" | "verify" | "connections" | "importOrders" | "orderAssign" | "recall" | "alerts";
 
 const navItems: { view: View; label: string }[] = [
+  { view: "overview", label: "Overview" },
+  { view: "stock", label: "Stock" },
   { view: "catalogue", label: "Catalogue" },
   { view: "receiveStock", label: "Receive Stock" },
   { view: "packingRun", label: "Packing Run" },
@@ -31,7 +35,7 @@ const navItems: { view: View; label: string }[] = [
 
 function App() {
   const [user, setUser] = useState<LoggedInUser | null>(null);
-  const [activeView, setActiveView] = useState<View>("receiveStock");
+  const [activeView, setActiveView] = useState<View>("overview");
   const [lastSubBatchId, setLastSubBatchId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -48,7 +52,7 @@ function App() {
 
   function handleLogout() {
     setUser(null);
-    setActiveView("receiveStock");
+    setActiveView("overview");
     setLastSubBatchId(null);
   }
 
@@ -129,6 +133,8 @@ function Shell({ user, activeView, setActiveView, lastSubBatchId, setLastSubBatc
           </header>
 
           <section style={{ padding: 24, flex: 1, overflowY: "auto" }}>
+            {activeView === "overview" && <Dashboard onNavigate={(v) => setActiveView(v as View)} />}
+            {activeView === "stock" && <Stock />}
             {activeView === "receiveStock" && <BatchForm />}
             {activeView === "packingRun" && (
               <PackingRunForm onCreated={(subBatchId) => { setLastSubBatchId(subBatchId); setActiveView("printLabels"); }} />

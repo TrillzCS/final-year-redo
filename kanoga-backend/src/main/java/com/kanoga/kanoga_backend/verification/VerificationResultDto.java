@@ -14,12 +14,17 @@ public class VerificationResultDto {
     private boolean expired;
 
     private boolean assigned;
-    private Long orderId;
+    private String orderId;
     private String orderNumber;
     private String customerName;
     private String customerEmail;
     // ISO datetime string (or null)
     private String assignedAt;
+    private String returnedAt;
+    private String dispatchedAt;
+    private java.util.List<HistoryEntry> history = new java.util.ArrayList<>();
+
+    public record HistoryEntry(String when, String event, String detail) {}
 
     public boolean isValid() {
         return valid;
@@ -97,7 +102,7 @@ public class VerificationResultDto {
         return orderId;
     }
 
-    public void setOrderId(Long orderId) {
+    public void setOrderId(String orderId) {
         this.orderId = orderId;
     }
 
@@ -131,5 +136,29 @@ public class VerificationResultDto {
 
     public void setAssignedAt(String assignedAt) {
         this.assignedAt = assignedAt;
+    }
+
+    public String getReturnedAt() {
+        return returnedAt;
+    }
+
+    public void setReturnedAt(String returnedAt) {
+        this.returnedAt = returnedAt;
+    }
+
+    public String getDispatchedAt() {
+        return dispatchedAt;
+    }
+
+    public void setDispatchedAt(String dispatchedAt) {
+        this.dispatchedAt = dispatchedAt;
+    }
+
+    public java.util.List<HistoryEntry> getHistory() {
+        return history;
+    }
+
+    public void setHistory(java.util.List<HistoryEntry> history) {
+        this.history = history;
     }
 }

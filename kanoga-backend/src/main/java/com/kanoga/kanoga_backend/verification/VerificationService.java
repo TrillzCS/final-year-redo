@@ -154,20 +154,40 @@ public class VerificationService {
             }
 
             boolean assigned = false;
+            String orderId = null, orderNumber = null, customerName = null;
+            String customerEmail = null, assignedAt = null, returnedAt = null, dispatchedAt = null;
 
             if (subBatchId != null && serialNo != null) {
                 List<Map<String, Object>> assignedRows = jdbc.queryForList(
                         """
-                        select order_item_id
-                        from assigned_units
-                        where sub_batch_id = ?
-                        and unit_serial_no = ?
+                        select o.id::text            as order_id,
+                               o.order_no            as order_no,
+                               o.dispatched_at::text as dispatched_at,
+                               c.name                as customer_name,
+                               c.email               as customer_email,
+                               au.returned_at::text  as returned_at,
+                               oi.id::text           as order_item_id
+                        from assigned_units au
+                        join order_items oi on oi.id = au.order_item_id
+                        join orders o on o.id = oi.order_id
+                        left join customers c on c.id = o.customer_id
+                        where au.sub_batch_id = ? and au.unit_serial_no = ?
                         limit 1
                         """,
                         subBatchId,
                         serialNo
                 );
-                assigned = !assignedRows.isEmpty();
+
+                if (!assignedRows.isEmpty()) {
+                    Map<String, Object> row = assignedRows.get(0);
+                    assigned = true;
+                    orderId = asString(row.get("order_id"));
+                    orderNumber = asString(row.get("order_no"));
+                    customerName = asString(row.get("customer_name"));
+                    customerEmail = asString(row.get("customer_email"));
+                    returnedAt = asString(row.get("returned_at"));
+                    dispatchedAt = asString(row.get("dispatched_at"));
+                }
             }
 
             LocalDate effectiveBestBefore = expiry != null ? expiry : bestBefore;
@@ -188,11 +208,21 @@ public class VerificationService {
             }
 
             dto.setAssigned(assigned);
-            dto.setOrderId(null);
-            dto.setOrderNumber(null);
-            dto.setCustomerName(null);
-            dto.setCustomerEmail(null);
-            dto.setAssignedAt(null);
+            dto.setOrderId(orderId);
+            dto.setOrderNumber(orderNumber);
+            dto.setCustomerName(customerName);
+            dto.setCustomerEmail(customerEmail);
+            dto.setAssignedAt(assignedAt);
+            dto.setReturnedAt(returnedAt);
+            dto.setDispatchedAt(dispatchedAt);
+            dto.setHistory(buildHistory(subBatchCode, serialNo, batchCode, supplierName,
+                    effectiveBestBefore, orderNumber, customerName, dispatchedAt, returnedAt));
+
+            if (returnedAt != null) {
+                dto.setMessage("Returned by the customer and quarantined.");
+            } else if (assigned) {
+                dto.setMessage("Verified. This unit was sent to " + (customerName == null ? "a customer" : customerName) + ".");
+            }
 
             return dto;
 
@@ -231,5 +261,39 @@ public class VerificationService {
         if (value instanceof LocalDate d) return d;
         if (value instanceof Date d) return d.toLocalDate();
         return LocalDate.parse(value.toString());
+    }
+
+    private List<VerificationResultDto.HistoryEntry> buildHistory(
+            String subBatchCode, Integer serialNo, String batchCode, String supplierName,
+            LocalDate bestBefore, String orderNumber, String customerName,
+            String dispatchedAt, String returnedAt) {
+
+        List<VerificationResultDto.HistoryEntry> history = new java.util.ArrayList<>();
+
+        if (batchCode != null) {
+            history.add(new VerificationResultDto.HistoryEntry(
+                    null, "Received from supplier",
+                    "Batch " + batchCode + (supplierName == null ? "" : " from " + supplierName)));
+        }
+        if (subBatchCode != null) {
+            history.add(new VerificationResultDto.HistoryEntry(
+                    null, "Packed and labelled",
+                    "Sub-batch " + subBatchCode + ", unit " + serialNo
+                            + (bestBefore == null ? "" : ", best before " + bestBefore)));
+        }
+        if (orderNumber != null) {
+            history.add(new VerificationResultDto.HistoryEntry(
+                    null, "Picked for order",
+                    orderNumber + (customerName == null ? "" : " - " + customerName)));
+        }
+        if (dispatchedAt != null) {
+            history.add(new VerificationResultDto.HistoryEntry(
+                    dispatchedAt, "Dispatched", "Left the warehouse"));
+        }
+        if (returnedAt != null) {
+            history.add(new VerificationResultDto.HistoryEntry(
+                    returnedAt, "Returned", "Quarantined, not returned to sellable stock"));
+        }
+        return history;
     }
 }

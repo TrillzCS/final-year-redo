@@ -1,5 +1,6 @@
 package com.kanoga.kanoga_backend.orders;
 
+import com.kanoga.kanoga_backend.activity.ActivityService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,9 +14,11 @@ import java.util.UUID;
 public class OrderService {
 
     private final JdbcTemplate jdbc;
+    private final ActivityService activity;
 
-    public OrderService(JdbcTemplate jdbc) {
+    public OrderService(JdbcTemplate jdbc, ActivityService activity) {
         this.jdbc = jdbc;
+        this.activity = activity;
     }
 
     private void requireOrderExists(UUID orderId) {
@@ -106,6 +109,17 @@ public class OrderService {
                     "Cannot dispatch an order with no units assigned to it");
         }
 
+        int released = 0;
+        if (target == OrderStatus.CANCELLED) {
+            // Cancelling is only reachable before dispatch, so the units never left the
+            // building and go straight back to available stock.
+            released = jdbc.update("""
+                delete from assigned_units au
+                using order_items oi
+                where oi.id = au.order_item_id and oi.order_id = ?
+                """, orderUUID);
+        }
+
         if (target == OrderStatus.DISPATCHED) {
             jdbc.update(
                     "update orders set status = ?::order_status, dispatched_at = now() where id = ?",
@@ -115,6 +129,10 @@ public class OrderService {
                     "update orders set status = ?::order_status where id = ?",
                     target.name(), orderUUID);
         }
+
+        String detail = current.name() + " to " + target.name()
+                + (released > 0 ? " (" + released + " unit(s) returned to stock)" : "");
+        activity.record("ORDER_STATUS_CHANGED", "order", orderUUID, detail);
 
         return getOrder(orderUUID);
     }
@@ -147,6 +165,9 @@ public class OrderService {
                     "Serial " + request.serialNo()
                             + " is not currently assigned to this order (it may already be returned)");
         }
+
+        activity.record("UNIT_RETURNED", "order", orderUUID,
+                "Serial " + request.serialNo() + " returned and quarantined");
 
         return getOrder(orderUUID);
     }
@@ -219,6 +240,9 @@ public class OrderService {
                 customerId
         );
 
+        activity.record("ORDER_CREATED", "order", orderId,
+                "Order " + orderNo + " created for " + resolvedName);
+
         return new OrderResponseDto(
                 orderId,
                 orderNo,
@@ -286,6 +310,9 @@ public class OrderService {
                     UUID.randomUUID(), orderItemId, subBatchUUID, serial
             );
         }
+
+        activity.record("UNITS_ASSIGNED", "order", orderUUID,
+                serials.size() + " unit(s) picked from sub-batch " + req.subBatchId());
 
         return labelRows.stream().map(row ->
                 new AssignedLabelDto(
@@ -409,6 +436,9 @@ public class OrderService {
                 UUID.randomUUID(), orderItemId, subBatchId, serialNo
         );
 
+        activity.record("UNITS_ASSIGNED", "order", orderUUID,
+                "Serial " + serialNo + " scanned and picked");
+
         return new AssignByQrResponse(
                 orderId,
                 labelId,
@@ -447,5 +477,37 @@ public class OrderService {
                 rs.getString("expiry"),
                 rs.getString("returned_at")
         ), orderUUID);
+    }
+
+    /**
+     * Removes an order entirely. Only allowed for orders created in error: anything
+     * dispatched, or with units still picked, must be cancelled instead so the trail survives.
+     */
+    @Transactional
+    public void deleteOrder(String orderId) {
+        UUID orderUUID = UUID.fromString(orderId);
+        requireOrderExists(orderUUID);
+
+        OrderStatus status = currentStatus(orderUUID);
+        if (status == OrderStatus.DISPATCHED || status == OrderStatus.RETURNED) {
+            throw new IllegalArgumentException(
+                    "A " + status.name().toLowerCase() + " order cannot be deleted. "
+                            + "Its history is part of the traceability record.");
+        }
+
+        long assigned = countAssignedUnits(orderUUID);
+        if (assigned > 0) {
+            throw new IllegalArgumentException(
+                    "This order still has " + assigned + " unit(s) picked. Cancel it instead, "
+                            + "which returns them to stock.");
+        }
+
+        String orderNo = jdbc.queryForObject(
+                "select order_no from orders where id = ?", String.class, orderUUID);
+
+        jdbc.update("delete from order_items where order_id = ?", orderUUID);
+        jdbc.update("delete from orders where id = ?", orderUUID);
+
+        activity.record("ORDER_DELETED", "order", orderUUID, "Order " + orderNo + " deleted");
     }
 }

@@ -55,6 +55,11 @@ public class OrderController {
     }
 
     /** Records one unit coming back from the customer. */
+    @DeleteMapping("/{orderId}")
+    public void delete(@PathVariable String orderId) {
+        orderService.deleteOrder(orderId);
+    }
+
     @PostMapping("/{orderId}/returns")
     public OrderSummaryDto returnUnit(
             @PathVariable String orderId,
